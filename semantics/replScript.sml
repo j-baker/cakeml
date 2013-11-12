@@ -78,15 +78,34 @@ val print_v_def = Define `
 (print_v (Recclosure _ _ _) = "<fn>") ∧
 (print_v (Loc _) = "<ref>")`;
 
+val print_tc_def = Define`
+  (print_tc (TC_name tid) = id_to_string tid) ∧
+  (print_tc TC_int = "int") ∧
+  (print_tc TC_bool = "bool") ∧
+  (print_tc TC_unit = "unit") ∧
+  (print_tc TC_ref = "ref") ∧
+  (print_tc TC_fn = "fn") ∧
+  (print_tc TC_tup = "tup") ∧
+  (print_tc TC_exn = "exn")`
+
+val print_t_def = Define`
+  (print_t (Tvar a) = "'"++a) ∧
+  (print_t (Tvar_db n) = "'"++num_to_dec_string n) ∧
+  (print_t (Tapp _ tc) = print_tc tc)`
+
+val print_type_def = Define`
+  (print_type (SOME (_,t)) = print_t t) ∧
+  (print_type NONE = "<bad>")`
+
 val print_envE_def = Define `
-print_envE envE = CONCAT (MAP (\(x,v). "val " ++ x ++ " = " ++ print_v v ++ "\n") envE)`;
+print_envE tenv envE = CONCAT (MAP (\(x,v). "val " ++ x ++ " : " ++ print_type (lookup x tenv) ++ " = " ++ print_v v ++ "\n") envE)`;
 
 val print_result_def = Define `
-(print_result (Tdec _) envC (Rval (envM,envE)) = print_envC envC ++ print_envE envE) ∧
-(print_result (Tmod mn _ _) _ (Rval _) = "structure "++mn++" = <structure>\n") ∧
-(print_result _ _ (Rerr Rtimeout_error) = "<timeout error>\n") ∧
-(print_result _ _ (Rerr Rtype_error) = "<type error>\n") ∧
-(print_result _ _ (Rerr (Rraise e)) = "raise " ++ print_v e ++ "\n")`;
+(print_result (Tdec _) tenv envC (Rval (envM,envE)) = print_envC envC ++ print_envE tenv envE) ∧
+(print_result (Tmod mn _ _) _ _ (Rval _) = "structure "++mn++" = <structure>\n") ∧
+(print_result _ _ _ (Rerr Rtimeout_error) = "<timeout error>\n") ∧
+(print_result _ _ _ (Rerr Rtype_error) = "<type error>\n") ∧
+(print_result _ _ _ (Rerr (Rraise e)) = "raise " ++ print_v e ++ "\n")`;
 
 val (ast_repl_rules, ast_repl_ind, ast_repl_cases) = Hol_reln `
 
@@ -100,7 +119,7 @@ val (ast_repl_rules, ast_repl_ind, ast_repl_cases) = Hol_reln `
   evaluate_top state.envM state.envC state.store state.envE top (store',envC',r) ∧
   ast_repl (update_repl_state top state type_bindings' ctors' tenvM' tenvC' tenv' store' envC' r) type_errors asts rest
   ⇒
-  ast_repl state (F::type_errors) (SOME ast::asts) (Result (print_result top envC' r) rest)) ∧
+  ast_repl state (F::type_errors) (SOME ast::asts) (Result (print_result top tenv' envC' r) rest)) ∧
 
 (!state type_errors ast asts top type_bindings' ctors' tenvM' tenvC' tenv'.
   (elab_top state.type_bindings state.ctors ast =
