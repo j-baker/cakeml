@@ -126,20 +126,43 @@ let compile_decs_wrap mn rs decs =
   let env = Lib.ZIP news (genlist (fun i -> rs.rsz+n-1-i) n) in
   (ct,env,cs)
 
-let tystr types v =
-  match Map.lookup v types with
-    | Just t -> t
-    | Nothing -> "<unknown>"
-  end
+let rec
+compile_print_val TC_int s = emit s [PrintInt]
+and
+compile_print_val TC_string s = emit s [PrintStr]
+and
+compile_print_val TC_bool s =
+  let (s,n0) = get_label s in
+  let (s,n1) = get_label s in
+  emit s ([JumpIf (Lab n0)]++
+          (List.map PrintC (EXPLODE "false"))++
+          [Jump (Lab n1); Label n0]++
+          (List.map PrintC (EXPLODE "true"))++
+          [Label n1])
+and
+compile_print_val TC_unit s =
+  emit s (Stack Pop::(List.map PrintC (EXPLODE "()")))
+and
+compile_print_val TC_fn s =
+  emit s (Stack Pop::(List.map PrintC (EXPLODE "<fn>")))
+and
+compile_print_val TC_ref s =
+  emit s (Stack Pop::(List.map PrintC (EXPLODE "<ref>")))
+and
+compile_print_val _ s =
+  emit s (Stack Pop::(List.map PrintC (EXPLODE "<constructor>")))
 
 let rec
 compile_print_vals _ _ [] s = s
 and
 compile_print_vals types n (v::vs) s =
-  let s = emit s (List.map PrintC (EXPLODE (string_concat ["val ";v;":"; tystr types v;" = "]))) in
-  let s = emit s [Stack(Load n); Print] in
+  let (tystr, tc) = match Map.lookup v types with | Just p -> p | Nothing -> ("<unknown>",TC_exn) end in
+  let s = emit s (List.map PrintC (EXPLODE (string_concat ["val ";v;":"; tystr; " = "]))) in
+  let s = emit s [Stack(Load n)] in
+  let s = compile_print_val tc s in
   let s = emit s (List.map PrintC (EXPLODE "\n")) in
     compile_print_vals types (n+1) vs s
+declare termination_argument compile_print_vals = automatic
 
 let rec
 compile_print_ctors [] s = s
@@ -185,6 +208,7 @@ compile_top _ rs (Tmod mn _ decs) =
 and
 compile_top types rs (Tdec dec) =
   let (ct,env,cs) = compile_decs_wrap Nothing rs [dec] in
+  let cs = compile_print_dec types dec cs in
   (<| rs with
       contab = ct
     ; rnext_label = cs.next_label
@@ -193,4 +217,4 @@ compile_top types rs (Tdec dec) =
   ,<| rs with
       contab = ct
     ; rnext_label = cs.next_label |>
-  ,(compile_print_dec types dec cs).out)
+  ,cs.out)

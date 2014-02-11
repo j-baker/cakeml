@@ -31,10 +31,14 @@ val inf_type_to_string_def = tDefine "inf_type_to_string" `
 (inf_types_to_string (t::ts) ⇔ inf_type_to_string t ++ ", " ++ inf_types_to_string ts)`
 (WF_REL_TAC `measure (\x. case x of INL x => infer_t_size x | INR x => infer_t1_size x)`);
 
+val inf_type_to_tc_def = Define`
+  (inf_type_to_tc (Infer_Tapp _ tc) = SOME tc) ∧
+  (inf_type_to_tc _ = NONE)`
+
 val inf_tenv_to_string_map_def = Define `
 (inf_tenv_to_string_map [] ⇔ FEMPTY) ∧
 (inf_tenv_to_string_map ((x, (_, t)) :: tenv) ⇔
-inf_tenv_to_string_map tenv |+ (x, inf_type_to_string t))`;
+inf_tenv_to_string_map tenv |+ (x, (inf_type_to_string t, inf_type_to_tc t)))`;
 
 val _ = type_abbrev ("inferencer_state", ``:(modN, (varN, num # infer_t) env) env # tenvC # (varN, num # infer_t) env``);
 
@@ -153,7 +157,7 @@ val install_code_def = Define `
              ; cons_names := m
              |>`;
 
-val PrintE_def = Define`PrintE = (MAP PrintC "raise ")++[Print;PrintC(#"\n")]`
+val PrintE_def = Define`PrintE = (MAP PrintC "raise <constructor>\n")`
 
 val initial_bc_state_def =  Define`
   initial_bc_state =

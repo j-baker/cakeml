@@ -46,7 +46,8 @@ type
   | Update                  (* update a ref cell *)
   | Stop                    (* halt execution *)
   | Tick                    (* use fuel *)
-  | Print                   (* print value at top of stack *)
+  | PrintInt                (* print integer at top of stack *)
+  | PrintStr                (* print string at top of stack *)
   | PrintC of char          (* print a character *)
 
 (* --- Semantics --- *)
@@ -101,21 +102,6 @@ and
 is_Number _ = false
 
 let rec dest_Number (Number i) = i
-
-let rec
-can_Print (Number _) = true
-and
-can_Print (Block n vs) = not (n = block_tag) || can_Print_list vs
-and
-can_Print (CodePtr _) = false
-and
-can_Print (RefPtr _) = true
-and
-can_Print (StackPtr _) = false
-and
-can_Print_list [] = true
-and
-can_Print_list (v::vs) = can_Print v && can_Print_list vs
 
 (* comparing bc_values for equality *)
 
@@ -379,13 +365,20 @@ bc_fetch s = Just Tick
 ==>
 bc_next s (<|bump_pc s with clock = Maybe.map natPred s.clock|>)
 and
-print : forall s x xs.
-bc_fetch s = Just Print
-&& (s.stack = x::xs)
-&& can_Print x
+printInt : forall s i xs.
+bc_fetch s = Just PrintInt
+&& (s.stack = (Number i)::xs)
 ==>
 bc_next s (<|bump_pc s with stack = xs;
-  output = string_concat [s.output;ov_to_string (bv_to_ov s.cons_names x)]|>)
+  output = string_concat [s.output;int_to_string i]|>)
+and
+printStr : forall s is xs.
+bc_fetch s = Just PrintStr
+&& (s.stack = (Block string_tag (List.map Number is)))
+==>
+bc_next s (<|bump_pc s with stack = xs;
+  output = string_concat [s.output;
+    string_to_string (String.toString (List.map (num_to_char o int_to_num) is))]|>)
 and
 printC : forall s c.
 bc_fetch s = Just (PrintC c)
