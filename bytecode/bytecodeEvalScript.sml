@@ -120,6 +120,14 @@ PROVE_TAC[bc_eval_stack_thm,
 optionTheory.option_CASES,
 optionTheory.NOT_SOME_NONE])
 
+val bvs_to_chars_thm = store_thm("bvs_to_chars_thm",
+  ``∀bvs ac. bvs_to_chars bvs ac =
+      if EVERY is_Number bvs then
+         SOME(REVERSE ac ++ MAP (CHR o Num o dest_Number) bvs)
+      else NONE``,
+  Induct >> simp[bvs_to_chars_def] >>
+  Cases >> rw[bvs_to_chars_def])
+
 val bc_eval1_def = Define`
   bc_eval1 s = OPTION_BIND (bc_fetch s)
   (λx. case (x, s.stack) of
@@ -170,10 +178,11 @@ val bc_eval1_def = Define`
     (case s.clock of
      | NONE => SOME (bump_pc s)
      | SOME n => if n > 0 then SOME (bump_pc s with <| clock := SOME (n-1) |>) else NONE)
-  | (Print, x::xs) =>
-    if can_Print x then
-    SOME (bump_pc s with <| stack := xs; output := STRCAT s.output (ov_to_string(bv_to_ov s.cons_names x))|>)
-    else NONE
+  | (PrintInt, (Number i)::xs) =>
+    SOME (bump_pc s with <| stack := xs; output := STRCAT s.output (int_to_string i)|>)
+  | (PrintStr, (Block t vs)::xs) =>
+    OPTION_BIND (if t = string_tag then bvs_to_chars vs [] else NONE)
+    (λcs. SOME (bump_pc s with <| stack := xs; output := STRCAT s.output (string_to_string (IMPLODE cs))|>))
   | (PrintC c,_) =>
     SOME (bump_pc s with <| output := IMPLODE (SNOC c (EXPLODE s.output)) |>)
   | _ => NONE)`
@@ -249,7 +258,24 @@ Cases_on `inst` >> fs[GSYM bc_eval_stack_thm]
   rw[bytecodeTheory.bc_state_component_equality,bump_pc_def])
 >- (
   Cases_on `s1.stack` >> fs[LET_THM] >>
+  qmatch_assum_rename_tac `s1.stack = h::t` [] >>
+  Cases_on `h` >> fs [] >>
   rw[bc_next_cases] )
+>- (
+  Cases_on `s1.stack` >> fs[LET_THM] >>
+  qmatch_assum_rename_tac `s1.stack = h::t` [] >>
+  Cases_on `h` >> fs [] >>
+  rw[bc_next_cases] >>
+  rw[bump_pc_def,bc_state_component_equality] >>
+  fs[bvs_to_chars_thm] >> rw[] >>
+  qmatch_assum_rename_tac`EVERY is_Number ls`[] >>
+  qexists_tac`MAP dest_Number ls` >>
+  rw[MAP_MAP_o] >>
+  rw[LIST_EQ_REWRITE,EL_MAP] >>
+  fs[EVERY_MEM,MEM_EL,PULL_EXISTS] >>
+  res_tac >>
+  qmatch_assum_rename_tac`is_Number bv`[] >>
+  Cases_on`bv`>>fs[])
 >- ( rw[bc_next_cases,stringTheory.IMPLODE_EXPLODE_I] ))
 
 val bc_next_bc_eval1 = store_thm(
@@ -264,6 +290,12 @@ lrw[REVERSE_APPEND,rich_listTheory.EL_APPEND2,rich_listTheory.TAKE_APPEND1,strin
 TRY(
   pop_assum (assume_tac o SYM) >>
   lrw[rich_listTheory.TAKE_REVERSE,rich_listTheory.LASTN_LENGTH_ID]) >>
+TRY (
+  simp[bc_state_component_equality,bvs_to_chars_thm] >>
+  simp[MAP_MAP_o,EVERY_MAP] >>
+  rw[GSYM MAP_MAP_o] >>
+  rpt AP_TERM_TAC >>
+  rw[LIST_EQ_REWRITE,EL_MAP]) >>
 BasicProvers.EVERY_CASE_TAC >> fs[PRE_SUB1] >>
 rw[bytecodeTheory.bc_state_component_equality,bump_pc_def])
 

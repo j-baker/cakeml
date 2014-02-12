@@ -23,7 +23,7 @@ val bc_next_can_be_clocked = store_thm("bc_next_can_be_clocked",
     qexists_tac`0`>>
     simp[Once bc_next_cases,bc_fetch_with_clock,bc_fetch_with_stack,bump_pc_def,bc_find_loc_with_clock,bool_to_tag_equals] >>
     simp[bc_state_component_equality] >>
-    NO_TAC) >>
+    metis_tac[]) >>
   rw[Once bc_next_cases,bc_fetch_with_clock,bump_pc_def,bc_state_component_equality] >>
   qexists_tac`1`>>simp[])
 
@@ -33,6 +33,7 @@ val bc_next_add_clock = store_thm("bc_next_add_clock",
   simp[Once bc_next_cases,bc_fetch_with_clock,bc_fetch_with_stack,bump_pc_def,bc_find_loc_with_clock,bool_to_tag_equals] >>
   simp[bc_state_component_equality] >>
   simp[optionTheory.OPTION_MAP_COMPOSE,combinTheory.o_DEF,arithmeticTheory.PRE_SUB1] >>
+  TRY(metis_tac[]) >>
   Cases_on`s1.clock`>>fs[]>>simp[])
 
 val RTC_bc_next_add_clock = store_thm("RTC_bc_next_add_clock",
@@ -60,7 +61,8 @@ val bc_next_can_be_unclocked = store_thm("bc_next_can_be_unclocked",
   ``∀s1 s2. bc_next s1 s2 ⇒ bc_next (s1 with clock := NONE) (s2 with clock := NONE)``,
   ho_match_mp_tac bc_next_ind >> rw[] >>
   simp[Once bc_next_cases,bc_fetch_with_clock,bc_fetch_with_stack,bump_pc_def,bc_find_loc_with_clock,bool_to_tag_equals] >>
-  simp[bc_state_component_equality])
+  simp[bc_state_component_equality] >>
+  metis_tac[])
 
 val RTC_bc_next_can_be_unclocked = store_thm("RTC_bc_next_can_be_unclocked",
   ``∀s1 s2. bc_next^* s1 s2 ⇒ bc_next^* (s1 with clock := NONE) (s2 with clock := NONE)``,
@@ -91,9 +93,9 @@ val bc_next_not_Tick_any_clock = store_thm("bc_next_not_Tick_any_clock",
   ho_match_mp_tac bc_next_ind >> rw[] >>
   rw[bc_eval1_thm,bc_eval1_def,bc_fetch_with_clock,LET_THM,stringTheory.IMPLODE_EXPLODE_I] >>
   rw[bump_pc_def,bc_fetch_with_clock,bc_state_component_equality,bc_find_loc_with_clock,bc_fetch_with_stack] >>
-  fs[bc_eval_stack_thm,bc_find_loc_with_clock] >> simp[] >>
+  fs[bc_eval_stack_thm,bc_find_loc_with_clock,bvs_to_chars_thm,listTheory.EVERY_MAP] >> simp[] >>
   simp[EL_REVERSE,PRE_SUB1,EL_APPEND1,EL_LENGTH_APPEND_rwt,bc_state_component_equality] >>
-  simp[REVERSE_APPEND,TAKE_APPEND1,TAKE_REVERSE] >>
+  simp[REVERSE_APPEND,TAKE_APPEND1,TAKE_REVERSE,MAP_MAP_o,combinTheory.o_DEF] >>
   metis_tac[LASTN_LENGTH_ID])
 
 val RTC_bc_next_less_timeout = store_thm("RTC_bc_next_less_timeout",

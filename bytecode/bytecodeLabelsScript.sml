@@ -462,7 +462,8 @@ val bc_next_strip_IMP = store_thm("bc_next_strip_IMP",
        LIST_CONJ (TypeBase.updates_of ``:bc_state``)]
   \\ TRY (Cases_on `b`)
   \\ FULL_SIMP_TAC (srw_ss()) [strip_labels_def,bc_fetch_def,
-       LIST_CONJ (TypeBase.updates_of ``:bc_state``),length_ok_def]);
+       LIST_CONJ (TypeBase.updates_of ``:bc_state``),length_ok_def]
+  \\ METIS_TAC[]);
 
 val bc_next_strip = prove(
   ``!r t. bc_next^* r t ==>

@@ -61,7 +61,8 @@ val _ = Hol_datatype `
   | Update                  (* update a ref cell *)
   | Stop                    (* halt execution *)
   | Tick                    (* use fuel *)
-  | Print                   (* print value at top of stack *)
+  | PrintInt                (* print integer at top of stack *)
+  | PrintStr                (* print string at top of stack *)
   | PrintC of char`;
           (* print a character *)
 
@@ -141,24 +142,6 @@ val _ = Define `
  val _ = Define `
  (dest_Number (Number i) = i)`;
 
-
- val can_Print_defn = Hol_defn "can_Print" `
-
-(can_Print (Number _) = T)
-/\
-(can_Print (Block n vs) = (~ (n = block_tag) \/ can_Print_list vs))
-/\
-(can_Print (CodePtr _) = F)
-/\
-(can_Print (RefPtr _) = T)
-/\
-(can_Print (StackPtr _) = F)
-/\
-(can_Print_list [] = T)
-/\
-(can_Print_list (v::vs) = (can_Print v /\ can_Print_list vs))`;
-
-val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn can_Print_defn;
 
 (* comparing bc_values for equality *)
 
@@ -410,13 +393,19 @@ bc_next s ((bump_pc s with<| stack := xs; refs :=s.refs |+ (ptr, x)|>)))
 /\ (! n. (s.clock = SOME n) ==> (n > 0)))
 ==>
 bc_next s ((bump_pc s with<| clock := OPTION_MAP PRE s.clock|>)))
-/\ (! s x xs.
-((bc_fetch s = SOME Print)
-/\ ((s.stack = (x::xs))
-/\ can_Print x))
+/\ (! s i xs.
+((bc_fetch s = SOME PrintInt)
+/\ (s.stack = ((Number i)::xs)))
 ==>
 bc_next s ((bump_pc s with<| stack := xs;
-  output := CONCAT [s.output;ov_to_string (bv_to_ov s.cons_names x)]|>)))
+  output := CONCAT [s.output;int_to_string i]|>)))
+/\ (! s is xs.
+((bc_fetch s = SOME PrintStr)
+/\ (s.stack = ((Block string_tag (MAP Number is))::xs)))
+==>
+bc_next s ((bump_pc s with<| stack := xs;
+  output := CONCAT [s.output;
+    string_to_string (IMPLODE (MAP (CHR o Num) is))]|>)))
 /\ (! s c.
 (bc_fetch s = SOME (PrintC c))
 ==>

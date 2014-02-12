@@ -41,7 +41,8 @@ val real_inst_length_def = zDefine `
    | Update => 3
    | Stop => 9
    | Tick => 1
-   | Print => 5
+   | PrintInt => 5
+   | PrintStr => 5
    | PrintC v13 => 25`
 
 val thms = ([],``!bc. x = real_inst_length bc``)
@@ -309,9 +310,26 @@ val bc_next_append_code = store_thm("bc_next_append_code",
     imp_res_tac bc_find_loc_append_code >>
     rw[bc_eval1_def,LET_THM] >>
     rw[bump_pc_def]) >>
+  strip_tac >- (
+    rw[bc_eval1_thm] >>
+    imp_res_tac bc_fetch_append_code >>
+    rw[bc_eval1_def,LET_THM] >>
+    BasicProvers.CASE_TAC >>
+    rw[bump_pc_def] >>
+    simp[bc_state_component_equality]) >>
+  strip_tac >- (
+    rw[bc_eval1_thm] >>
+    imp_res_tac bc_fetch_append_code >>
+    rw[bc_eval1_def,LET_THM] >>
+    rw[bump_pc_def]) >>
+  strip_tac >- (
+    rw[bc_eval1_thm] >>
+    imp_res_tac bc_fetch_append_code >>
+    rw[bc_eval1_def,LET_THM] >>
+    rw[bvs_to_chars_thm,bump_pc_def,EVERY_MAP,bc_state_component_equality] >>
+    rw[stringTheory.IMPLODE_EXPLODE_I,combinTheory.o_DEF,MAP_MAP_o]) >>
   rw[bc_eval1_thm] >>
   imp_res_tac bc_fetch_append_code >>
-  imp_res_tac bc_find_loc_append_code >>
   rw[bc_eval1_def,LET_THM,stringTheory.IMPLODE_EXPLODE_I] >>
   rw[bump_pc_def] >>
   BasicProvers.CASE_TAC >>
@@ -392,13 +410,5 @@ val RTC_bc_next_output_IS_PREFIX = store_thm("RTC_bc_next_output_IS_PREFIX",
   rw[reflexive_def,transitive_def] >- (
     match_mp_tac bc_next_output_IS_PREFIX >> rw[] ) >>
   metis_tac[IS_PREFIX_TRANS])
-
-val bvs_to_chars_thm = store_thm("bvs_to_chars_thm",
-  ``∀bvs ac. bvs_to_chars bvs ac =
-      if EVERY is_Number bvs then
-         SOME(REVERSE ac ++ MAP (CHR o Num o dest_Number) bvs)
-      else NONE``,
-  Induct >> simp[bvs_to_chars_def] >>
-  Cases >> rw[bvs_to_chars_def])
 
 val _ = export_theory()

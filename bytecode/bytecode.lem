@@ -374,11 +374,11 @@ bc_next s (<|bump_pc s with stack = xs;
 and
 printStr : forall s is xs.
 bc_fetch s = Just PrintStr
-&& (s.stack = (Block string_tag (List.map Number is)))
+&& (s.stack = (Block string_tag (List.map Number is))::xs)
 ==>
 bc_next s (<|bump_pc s with stack = xs;
   output = string_concat [s.output;
-    string_to_string (String.toString (List.map (num_to_char o int_to_num) is))]|>)
+    string_to_string (String.toString (List.map (comb num_to_char int_to_num) is))]|>)
 and
 printC : forall s c.
 bc_fetch s = Just (PrintC c)
