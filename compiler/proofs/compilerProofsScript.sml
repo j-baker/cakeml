@@ -865,11 +865,6 @@ val compile_code_env_thm = store_thm("compile_code_env_thm",
 
 (* printing *)
 
-val _ = Parse.overload_on("print_bv",``λm. ov_to_string o bv_to_ov m``)
-val print_bv_str_def = Define`print_bv_str m t v w = "val "++v++":"++(tystr t v)++" = "++(print_bv m w)++"\n"`
-
-val append_cons_lemma = prove(``ls ++ [x] ++ a::b = ls ++ x::a::b``,lrw[])
-
 val MAP_PrintC_thm = store_thm("MAP_PrintC_thm",
   ``∀ls bs bc0 bc1 bs'.
     bs.code = bc0 ++ (MAP PrintC ls) ++ bc1 ∧
@@ -893,11 +888,26 @@ val MAP_PrintC_thm = store_thm("MAP_PrintC_thm",
   qexists_tac`bc0 ++ [PrintC h]` >>
   simp[FILTER_APPEND,SUM_APPEND])
 
-val _ = Parse.overload_on("print_bv_list",``λm t vs ws. FLAT (MAP (UNCURRY (print_bv_str m t)) (ZIP (vs,ws)))``)
+val code_labels_ok_MAP_PrintC = store_thm("code_labels_ok_MAP_PrintC",
+  ``∀ls. code_labels_ok (MAP PrintC ls)``,
+  Induct>>simp[]>>rw[]>>match_mp_tac code_labels_ok_cons>>simp[])
+val _ = export_rewrites["code_labels_ok_MAP_PrintC"]
 
-val print_envE_cons = store_thm("print_envE_cons",
-  ``print_envE types (x::xs) = print_envE types [x]++print_envE types xs``,
-  rw[print_envE_def]);
+val TC_of_v_def = Define`
+  (TC_of_v (Litv (IntLit _)) = TC_int) ∧
+  (TC_of_v (Litv (StrLit _)) = TC_string) ∧
+  (TC_of_v (Litv (Bool _)) = TC_bool) ∧
+  (TC_of_v (Litv (Unit)) = TC_unit) ∧
+  (TC_of_v (Conv NONE _) = TC_tup) ∧
+  (TC_of_v (Conv (SOME id) _) = TC_name id) ∧
+  (TC_of_v (Closure _ _ _) = TC_fn) ∧
+  (TC_of_v (Recclosure _ _ _) = TC_fn) ∧
+  (TC_of_v (Loc _) = TC_ref)`
+
+val _ = Parse.overload_on("print_bv",``λtc. ov_to_string o bv_to_ov m``)
+val print_bv_str_def = Define`print_bv_str m t v w = "val "++v++":"++(tystr t v)++" = "++(print_bv m w)++"\n"`
+
+val _ = Parse.overload_on("print_bv_list",``λm t vs ws. FLAT (MAP (UNCURRY (print_bv_str m t)) (ZIP (vs,ws)))``)
 
 val print_v_ov = store_thm("print_v_ov",
   ``(∀v cm m sm mv. ov_to_string (Cv_to_ov m sm (v_to_Cv mv cm v)) = print_v v)
@@ -908,6 +918,10 @@ val print_v_ov = store_thm("print_v_ov",
   simp[print_v_def,v_to_Cv_def,printerTheory.ov_to_string_def] >>
   Cases >> simp[printerTheory.ov_to_string_def,print_lit_def] >>
   Cases_on`b`>>simp[printerTheory.ov_to_string_def,print_lit_def])
+
+val print_envE_cons = store_thm("print_envE_cons",
+  ``print_envE types (x::xs) = print_envE types [x]++print_envE types xs``,
+  rw[print_envE_def]);
 
 val print_bv_list_print_envE = store_thm("print_bv_list_print_envE",
   ``∀mv pp vars vs cm m Cvs bvs types env.
@@ -938,16 +952,6 @@ val print_bv_list_print_envE = store_thm("print_bv_list_print_envE",
     metis_tac[syneq_ov] >>
   pop_assum SUBST1_TAC >>
   simp[print_v_ov,tystr_def,FLOOKUP_DEF])
-
-val code_labels_ok_MAP_PrintC = store_thm("code_labels_ok_MAP_PrintC",
-  ``∀ls. code_labels_ok (MAP PrintC ls)``,
-  Induct>>simp[]>>rw[]>>match_mp_tac code_labels_ok_cons>>simp[])
-val _ = export_rewrites["code_labels_ok_MAP_PrintC"]
-
-val can_Print_list_EVERY = store_thm("can_Print_list_EVERY",
-  ``∀ls. can_Print_list ls = EVERY can_Print ls``,
-  Induct >> simp[])
-val _ = export_rewrites["can_Print_list_EVERY"]
 
 val compile_print_vals_thm = store_thm("compile_print_vals_thm",
   ``∀vs types i cs. let cs' = compile_print_vals types i vs cs in
@@ -1628,6 +1632,8 @@ val env_rs_can_Print = store_thm("env_rs_can_Print",
   rw[] >> metis_tac[])
 
 (* compile_news *)
+
+val append_cons_lemma = prove(``ls ++ [x] ++ a::b = ls ++ x::a::b``,lrw[])
 
 val compile_news_thm = store_thm("compile_news_thm",
   ``∀vs cs i. let cs' = compile_news cs i vs in

@@ -160,25 +160,46 @@ val _ = Define `
   (ct,env,cs)))`;
 
 
-val _ = Define `
- (tystr types v =  
-((case FLOOKUP types v of
-      SOME t => t
-    | NONE => "<unknown>"
-  )))`;
+ val _ = Define `
+
+(compile_print_val TC_int s = (emit s [PrintInt]))
+/\
+(compile_print_val TC_string s = (emit s [PrintStr]))
+/\
+(compile_print_val TC_bool s =  
+(let (s,n0) = (get_label s) in
+  let (s,n1) = (get_label s) in
+  emit s (((([JumpIf (Lab n0)]++
+          (MAP PrintC (EXPLODE "false")))++
+          [Jump (Lab n1); Label n0])++
+          (MAP PrintC (EXPLODE "true")))++
+          [Label n1])))
+/\
+(compile_print_val TC_unit s =  
+(emit s (Stack Pop::(MAP PrintC (EXPLODE "()")))))
+/\
+(compile_print_val TC_fn s =  
+(emit s (Stack Pop::(MAP PrintC (EXPLODE "<fn>")))))
+/\
+(compile_print_val TC_ref s =  
+(emit s (Stack Pop::(MAP PrintC (EXPLODE "<ref>")))))
+/\
+(compile_print_val _ s =  
+(emit s (Stack Pop::(MAP PrintC (EXPLODE "<constructor>")))))`;
 
 
- val compile_print_vals_defn = Hol_defn "compile_print_vals" `
+ val _ = Define `
 
 (compile_print_vals _ _ [] s = s)
 /\
 (compile_print_vals types n (v::vs) s =  
-(let s = (emit s (MAP PrintC (EXPLODE (CONCAT ["val ";v;":"; tystr types v;" = "])))) in
-  let s = (emit s [Stack(Load n); Print]) in
+(let (tystr, tc0) = ((case FLOOKUP types v of   SOME p => p | NONE => ("<unknown>",TC_exn) )) in
+  let s = (emit s (MAP PrintC (EXPLODE (CONCAT ["val ";v;":"; tystr; " = "])))) in
+  let s = (emit s [Stack(Load n)]) in
+  let s = (compile_print_val tc0 s) in
   let s = (emit s (MAP PrintC (EXPLODE "\n"))) in
     compile_print_vals types (n+ 1) vs s))`;
 
-val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn compile_print_vals_defn;
 
  val _ = Define `
 
@@ -230,6 +251,7 @@ val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn
 /\
 (compile_top types rs (Tdec dec) =  
 (let (ct,env,cs) = (compile_decs_wrap NONE rs [dec]) in
+  let cs = (compile_print_dec types dec cs) in
   (( rs with<|
       contab := ct
     ; rnext_label := cs.next_label
@@ -238,7 +260,7 @@ val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn
   ,( rs with<|
       contab := ct
     ; rnext_label := cs.next_label |>)
-  ,(compile_print_dec types dec cs).out)))`;
+  ,cs.out)))`;
 
 val _ = export_theory()
 

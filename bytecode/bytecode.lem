@@ -188,38 +188,6 @@ bc_find_loc _ (Addr n) = Just n
 and
 bc_find_loc s (Lab l) = bc_find_loc_aux s.code s.inst_length l 0
 
-(* conversion to observable values *)
-
-val bvs_to_chars : list bc_value -> list char -> maybe (list char)
-let rec
-bvs_to_chars [] ac = Just (List.reverse ac)
-and
-bvs_to_chars (Number i::vs) ac =
-  bvs_to_chars vs ((num_to_char (int_to_num i))::ac)
-and
-bvs_to_chars _ _ = Nothing
-declare termination_argument bvs_to_chars = automatic
-
-val bv_to_ov : list (nat * maybe (id conN)) -> bc_value -> ov
-let rec
-bv_to_ov _ (Number i) = OLit (IntLit i)
-and
-bv_to_ov m (Block n vs) =
-  if n = (bool_to_tag false) then OLit (Bool false) else
-  if n = (bool_to_tag true) then OLit (Bool true) else
-  if n = unit_tag then OLit Unit else
-  if n = closure_tag then OFn else
-  if n = string_tag then
-    match bvs_to_chars vs [] with
-    | Nothing -> OError
-    | Just cs -> OLit (StrLit (String.toString cs))
-    end else
-  OConv (the Nothing (Lib.lookup (n-block_tag) m)) (List.map (bv_to_ov m) vs)
-and
-bv_to_ov _ (RefPtr n) = OLoc n
-and
-bv_to_ov _ _ = OError
-
 (* next state relation *)
 
 indreln
@@ -384,3 +352,73 @@ printC : forall s c.
 bc_fetch s = Just (PrintC c)
 ==>
 bc_next s (<|bump_pc s with output = snoc_char c s.output|>)
+
+(* conversion to observable values *)
+
+val bvs_to_chars : list bc_value -> list char -> maybe (list char)
+let rec
+bvs_to_chars [] ac = Just (List.reverse ac)
+and
+bvs_to_chars (Number i::vs) ac =
+  bvs_to_chars vs ((num_to_char (int_to_num i))::ac)
+and
+bvs_to_chars _ _ = Nothing
+declare termination_argument bvs_to_chars = automatic
+
+val bv_to_ov : (Map.map (id typeN) (Map.map nat (id conN))) -> t -> bc_value -> ov
+let rec
+bv_to_ov _ (Tapp [] TC_int) (Number i) = OLit (IntLit i)
+and
+bv_to_ov _ (Tapp [] TC_string) (Block n vs) =
+  if n = string_tag then
+    match bvs_to_chars vs [] with
+    | Nothing -> OError
+    | Just cs -> OLit (StrLit (String.toString cs))
+    end
+  else OError
+and
+bv_to_ov _ (Tapp [] TC_bool) (Block n []) =
+  if n = (bool_to_tag false) then OLit (Bool false) else
+  if n = (bool_to_tag true) then OLit (Bool true) else
+    OError
+and
+bv_to_ov _ (Tapp [] TC_unit) (Block n []) =
+  if n = unit_tag then OLit Unit else OError
+and
+bv_to_ov _ (Tapp [_] TC_ref) (RefPtr n) =
+  OLoc n
+and
+bv_to_ov _ (Tapp [_;_] TC_fn) (Block n vs) =
+  if n = closure_tag then OFn else OError
+and
+bv_to_ov m (Tapp ts TC_tup) (Block n vs) =
+  if n = block_tag then
+    match bvs_to_ovs m ts vs with
+    | Nothing -> OError
+    | Just ovs -> OConv Nothing ovs
+    end
+  else OError
+and
+bv_to_ov m (Tapp ts (TC_name id)) (Block n vs) =
+  match Lib.lookup (n-block_tag) (the Map.empty (Lib.lookup id m)) with
+  | Nothing -> OError
+  | Just cn -> match bvs_to_ovs m ts vs with
+               | Nothing -> OError
+               | Just ovs -> OConv cn ovs
+               end
+  end
+and
+bv_to_ov _ _ = OError
+and
+bvs_to_ovs _ [] [] = Just []
+and
+bvs_to_ovs m (t::ts) (bv::bvs) =
+  match bv_to_ov m t bv with
+  | OError -> Nothing
+  | ov -> match bvs_to_ovs m ts bvs with
+          | Nothing -> Nothing
+          | Just ovs -> Just (ov::ovs)
+          end
+  end
+and
+bvs_to_ovs _ _ _ = Nothing
