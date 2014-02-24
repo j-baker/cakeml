@@ -62,8 +62,10 @@ val _ = Hol_datatype `
   | Stop                    (* halt execution *)
   | Tick                    (* use fuel *)
   | Print                   (* print value at top of stack *)
-  | PrintC of char`;
-          (* print a character *)
+  | PrintC of char          (* print a character *)
+  | LexInput                (* lex until top-level semicolon *)
+  | InstallAndRun`;
+           (* install new code and jump *)
 
 (* --- Semantics --- *)
 
@@ -89,6 +91,7 @@ val _ = Hol_datatype `
       refs : (num, bc_value) fmap;
       handler : num;
       output : string;
+      input : string;
       cons_names : (num #  ( conN id)option) list;
       (* artificial state components *)
       inst_length : bc_inst -> num;
@@ -299,6 +302,100 @@ val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn
 (bv_to_ov _ _ = OError)`;
 
 val _ = Lib.with_flag (computeLib.auto_import_definitions, false) Defn.save_defn bv_to_ov_defn;
+
+(* encoding of instructions *)
+
+(*val bc_num : bc_inst -> nat * nat * nat*)
+val _ = Define `
+ (bc_num s = ((case s of
+  Stack Pop => ( 0, 0, 0)
+| Stack (Pops n) => ( 1,n, 0)
+| Stack (PushInt i) => ( 3,Num (ABS i),(if i <( 0 : int) then  1 else  0))
+| Stack (Cons n m) => ( 4,n,m)
+| Stack (Load n) => ( 5,n, 0)
+| Stack (Store n) => ( 6,n, 0)
+| Stack (LoadRev n) => ( 7,n, 0)
+| Stack (El n) => ( 8,n, 0)
+| Stack (TagEq n) => ( 9,n, 0)
+| Stack IsBlock => ( 10, 0, 0)
+| Stack Equal => ( 11, 0, 0)
+| Stack Add => ( 12, 0, 0)
+| Stack Sub => ( 13, 0, 0)
+| Stack Mult => ( 14, 0, 0)
+| Stack Div => ( 15, 0, 0)
+| Stack Mod => ( 16, 0, 0)
+| Stack Less => ( 17, 0, 0)
+| Label n => ( 20,n, 0)
+| Jump (Addr n) => ( 21,n, 0)
+| JumpIf (Addr n) => ( 22,n, 0)
+| Call (Addr n) => ( 23,n, 0)
+| PushPtr (Addr n) => ( 24,n, 0)
+| Jump (Lab n) => ( 41,n, 0)
+| JumpIf (Lab n) => ( 42,n, 0)
+| Call (Lab n) => ( 43,n, 0)
+| PushPtr (Lab n) => ( 44,n, 0)
+| CallPtr => ( 26, 0, 0)
+| Return => ( 27, 0, 0)
+| PushExc => ( 28, 0, 0)
+| PopExc => ( 29, 0, 0)
+| Ref => ( 30, 0, 0)
+| Deref => ( 31, 0, 0)
+| Update => ( 32, 0, 0)
+| Stop => ( 33, 0, 0)
+| Tick => ( 34, 0, 0)
+| Print => ( 35, 0, 0)
+| PrintC c => ( 36,ORD c, 0)
+| LexInput => ( 37, 0, 0)
+| InstallAndRun => ( 38, 0, 0)
+)))`;
+
+
+(*val num_bc : nat * nat * nat -> bc_inst*)
+val _ = Define `
+ (num_bc (n,x1,x2) =  
+(if n = 0 then Stack Pop
+  else if n = 1 then Stack (Pops x1)
+  else if n = 3 then Stack (PushInt
+                             (if x2 = 0 then int_of_num x1
+                                        else( 0 : int) - int_of_num x1))
+  else if n = 4 then Stack (Cons x1 x2)
+  else if n = 5 then Stack (Load x1)
+  else if n = 6 then Stack (Store x1)
+  else if n = 7 then Stack (LoadRev x1)
+  else if n = 8 then Stack (El x1)
+  else if n = 9 then Stack (TagEq x1)
+  else if n = 10 then Stack IsBlock
+  else if n = 11 then Stack Equal
+  else if n = 12 then Stack Add
+  else if n = 13 then Stack Sub
+  else if n = 14 then Stack Mult
+  else if n = 15 then Stack Div
+  else if n = 16 then Stack Mod
+  else if n = 17 then Stack Less
+  else if n = 20 then Label x1
+  else if n = 21 then Jump (Addr x1)
+  else if n = 22 then JumpIf (Addr x1)
+  else if n = 23 then Call (Addr x1)
+  else if n = 24 then PushPtr (Addr x1)
+  else if n = 41 then Jump (Lab x1)
+  else if n = 42 then JumpIf (Lab x1)
+  else if n = 43 then Call (Lab x1)
+  else if n = 44 then PushPtr (Lab x1)
+  else if n = 26 then CallPtr
+  else if n = 27 then Return
+  else if n = 28 then PushExc
+  else if n = 29 then PopExc
+  else if n = 30 then Ref
+  else if n = 31 then Deref
+  else if n = 32 then Update
+  else if n = 33 then Stop
+  else if n = 34 then Tick
+  else if n = 35 then Print
+  else if n = 36 then PrintC (CHR (if x1 < 256 then x1 else  0))
+  else if n = 37 then LexInput
+  else if n = 38 then InstallAndRun
+  else Label( 0)))`;
+
 
 (* next state relation *)
 
