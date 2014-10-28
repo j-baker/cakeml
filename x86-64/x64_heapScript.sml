@@ -19745,4 +19745,6 @@ print_compiler_grammar()
 
 *)
 
+open bootstrapProofTheory;
+
 val _ = export_theory();

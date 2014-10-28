@@ -1,4 +1,4 @@
-INCLUDES = .. ../bytecode/ ../semantics/ ../parsing/ \
+INCLUDES = .. ../bytecode/ ../semantics/ ../parsing/ ../bootstrap/ \
            $(HOLDIR)/examples/machine-code/x64_compiler \
            $(HOLDIR)/examples/machine-code/decompiler \
            $(HOLDIR)/examples/machine-code/hoare-triple \
