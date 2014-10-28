@@ -109,6 +109,7 @@ val evaluate_call_repl_step = store_thm("evaluate_call_repl_step",
       ∃out'. OUTPUT_TYPE (basis_repl_step x) out' ∧
       evaluate_top F ^repl_all_env (update_io inp out ^repl_store) ^call_dec
         (update_io inp out' ^repl_store, ([],[]), Rval ([],[]))``,
+  cheat >>
   rw[evaluate_top_cases,evaluate_dec_cases,Once evaluate_cases] >>
   rw[Once evaluate_cases,semanticPrimitivesTheory.lookup_var_id_def] >>
   rw[Once evaluate_cases,astTheory.pat_bindings_def] >>

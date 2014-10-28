@@ -17,6 +17,8 @@ val _ = translate_into_module "REPL";
 
 val _ = std_preludeLib.std_prelude ();
 
+(*
+
 val _ = register_type ``:lexer_fun$symbol``;
 
 val _ = add_preferred_thy "-";
@@ -476,6 +478,17 @@ val _ = translate (pred_setTheory.IN_INSERT |> SIMP_RULE std_ss [IN_DEF]);
 val _ = translate repl_funTheory.basis_state_eq
 val _ = translate lexer_implTheory.get_token_eqn
 val _ = translate repl_funTheory.basis_repl_step_def
+
+*)
+
+
+
+val _ = let
+  val lhs = ``basis_repl_step``
+  val rhs = mk_arb(type_of lhs)
+  val def = prove(mk_eq(lhs,rhs),cheat)
+  val res = translate def
+  in () end
 
 val _ = Feedback.set_trace "TheoryPP.include_docs" 0;
 
