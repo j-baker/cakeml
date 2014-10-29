@@ -9,6 +9,23 @@ open sptreeTheory lcsymtacs;
    annotations that are attached to MakeSpace, Assign and Call in BVP
    programs. *)
 
+val pPure_def = Define `
+  (pPure (Const _) = T) /\
+  (pPure (Global _) = T) /\
+  (pPure (El _) = T) /\
+  (pPure (TagEq _) = T) /\
+  (pPure (IsBlock:bvl_op) = T) /\
+  (pPure (Equal) = T) /\
+  (pPure (Deref) = T) /\
+  (pPure (Label _) = T) /\
+  (pPure _ = F)`
+
+val pSkipAssign_def = Define `
+  pSkipAssign v (live:num_set) op =
+    case lookup v live of
+    | SOME _ => F
+    | NONE => pPure op`;
+
 val pLive_def = Define `
   (pLive Skip live = (Skip,live)) /\
   (pLive (Return n) live = (Return n, insert n () LN)) /\
@@ -23,8 +40,11 @@ val pLive_def = Define `
   (pLive (MakeSpace k names) live =
      let l1 = inter names live in (MakeSpace k l1,l1)) /\
   (pLive (Assign v op vs NONE) live =
-     let l1 = list_insert vs (delete v live) in
-       (Assign v op vs NONE,l1)) /\
+     if pSkipAssign v live op then
+       (Skip,live)
+     else
+       let l1 = list_insert vs (delete v live) in
+         (Assign v op vs NONE,l1)) /\
   (pLive (Assign v op vs (SOME names)) live =
      let l1 = inter names (list_insert vs (delete v live)) in
        (Assign v op vs (SOME l1),l1)) /\
@@ -141,6 +161,19 @@ val domain_list_to_num_set = prove(
   ``!xs. x IN domain (list_to_num_set xs) <=> MEM x xs``,
   Induct \\ fs [list_to_num_set_def]);
 
+val bvi_to_bvp_lemma = prove(
+  ``(bvi_to_bvp (bvl_to_bvi (bvi_to_bvl (bvp_to_bvi s)) (bvp_to_bvi s)) s = s) /\
+    (bvi_to_bvp (bvp_to_bvi s) s = s)``,
+  EVAL_TAC \\ fs [bvp_state_component_equality]);
+
+val pEvalOp_pPure = prove(
+  ``(pEvalOp op x s = SOME (q,r)) /\ pPure op ==> (r = s)``,
+  Cases_on `op` \\ fs [pEvalOp_def,pEvalOpSpace_def,pPure_def,
+     op_space_reset_def,op_space_req_def,bviTheory.iEvalOp_def,
+     bviTheory.iEvalOpAux_def,bEvalOp_def]
+  \\ REPEAT BasicProvers.FULL_CASE_TAC
+  \\ fs [bvi_to_bvp_lemma]);
+
 val pEval_pLive = prove(
   ``!c s1 res s2 l2 t1 l1 d.
       (pEval (c,s1) = (res,s2)) /\ state_rel s1 t1 l1 /\
@@ -164,6 +197,14 @@ val pEval_pLive = prove(
       (fs [pEval_def,get_var_def,LET_DEF]
        \\ REPEAT (BasicProvers.FULL_CASE_TAC \\ fs []) \\ SRW_TAC [] []
        \\ fs [pLive_def,LET_DEF,pEval_def,cut_state_opt_def]
+       \\ Cases_on `pSkipAssign dest l2 op` \\ fs [] THEN1
+        (SRW_TAC [] [pEval_def] \\ fs [pSkipAssign_def]
+         \\ Cases_on `lookup dest l1` \\ fs []
+         \\ fs [state_rel_def,set_var_def]
+         \\ IMP_RES_TAC pEvalOp_pPure \\ SRW_TAC [] [lookup_insert]
+         \\ fs [domain_lookup])
+       \\ fs [pLive_def,LET_DEF,pEval_def,cut_state_opt_def]
+       \\ SRW_TAC [] [pEval_def]
        \\ `get_vars args t1 = SOME x'` by IMP_RES_TAC state_rel_IMP_get_vars
        \\ fs [] \\ IMP_RES_TAC state_rel_IMP_pEvalOp
        \\ fs [state_rel_def,set_var_def,lookup_insert]
