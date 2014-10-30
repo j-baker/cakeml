@@ -5,7 +5,7 @@ open finite_mapTheory sumTheory relationTheory stringTheory optionTheory;
 open bytecodeTheory bvlTheory bvl_constTheory;
 open bvl_inlineTheory bvpTheory;
 open bvp_lemmasTheory bvp_simpTheory bvp_liveTheory bvp_spaceTheory;
-open sptreeTheory lcsymtacs bviTheory;
+open sptreeTheory lcsymtacs bviTheory bvp_constTheory;
 
 infix \\ val op \\ = op THEN;
 val RW = REWRITE_RULE;
@@ -70,7 +70,8 @@ val iComp_def = tDefine "iComp" `
  (WF_REL_TAC `measure (bvi_exp2_size o SND o SND o SND o SND)`);
 
 val pOptimise_def = Define `
-  pOptimise prog = pSpaceOpt (FST (pLive (pSimp prog Skip) LN))`;
+  pOptimise prog =
+    pSpaceOpt (FST (pLive (FST (pConst (pSimp prog Skip) LN)) LN))`;
 
 val iCompile_def = Define `
   iCompile arg_count exp =
@@ -84,7 +85,8 @@ val pEval_pOptimise = prove(
           FST (pEval (c,s)) <> NONE ==>
           (pEval (pOptimise c,s) = pEval (c,s))``,
   fs [pOptimise_def] \\ REPEAT STRIP_TAC \\ Cases_on `pEval (c,s)` \\ fs []
-  \\ METIS_TAC [pSimp_thm,pLive_correct,pSpaceOpt_correct,FST]);
+  \\ METIS_TAC [pSimp_thm,pLive_correct,pSpaceOpt_correct,FST,
+       pConst_correct]);
 
 val res_list_def = Define `
   (res_list (Result x) = Result [x]) /\
