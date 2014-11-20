@@ -29,6 +29,12 @@ val ConstAssigns_def = Define `
      | NONE => ConstAssigns vs env x
      | SOME i => ConstAssigns vs env (Seq (ConstAssign v i) x))`
 
+val destConstAssign_def = Define `
+  destConstAssign op =
+    case op of
+    | Const i => SOME i
+    | _ => NONE`;
+
 val pConst_def = Define `
   (pConst Skip env = (Skip,env)) /\
   (pConst (Return n) env =
@@ -42,7 +48,7 @@ val pConst_def = Define `
   (pConst (Move n1 n2) env =
     case lookup n2 env of
     | NONE => (Move n1 n2, delete n1 env)
-    | SOME i => (ConstAssign n1 i, delete n1 env)) /\
+    | SOME i => (ConstAssign n1 i, insert n1 i env)) /\
   (pConst (Seq c1 c2) env =
      let (d1,e1) = pConst c1 env in
      let (d2,e2) = pConst c2 e1 in
@@ -51,18 +57,22 @@ val pConst_def = Define `
   (pConst (MakeSpace k names) env =
      (MakeSpace k names,inter env names)) /\
   (pConst (Assign v op vs opt_names) env =
-     (* needs to add Cosnt assignments into env *)
-     (ConstAssigns vs env (Assign v op vs opt_names),
-      delete v (case opt_names of
-                | NONE => env
-                | SOME ns => inter env ns))) /\
+     let env' = (case opt_names of
+                 | NONE => env
+                 | SOME ns => inter env ns) in
+       case destConstAssign op of
+       | SOME i =>
+           (Assign v op vs opt_names,insert v i env')
+       | NONE =>
+           (ConstAssigns vs env (Assign v op vs opt_names),delete v env')) /\
   (pConst (If c1 v c2 c3) env =
      let (d1,e1) = pConst c1 env in
      let (d2,e2) = pConst c2 e1 in
      let (d3,e3) = pConst c3 e1 in
        (If d1 v d2 d3, inter_eq e2 e3)) /\
   (* case below need to be improved *)
-  (pConst (x) env = (x,LN))`;
+  (pConst (Call ret dest vs handler) env =
+     (Call ret dest vs handler,LN))`;
 
 val pEval_ConstAssign = prove(
   ``small_enough_int i ==>
@@ -112,9 +122,30 @@ val pConst_correct_lemma = prove(
     \\ REPEAT STRIP_TAC \\ RES_TAC \\ fs []
     \\ fs [lookup_delete] \\ RES_TAC
     \\ REPEAT BasicProvers.CASE_TAC \\ fs []
-    \\ fs [get_var_def,set_var_def,lookup_insert])
+    \\ fs [get_var_def,set_var_def,lookup_insert]
+    \\ Cases_on `n' = n` \\ fs [] \\ RES_TAC)
   THEN1 (* Assign *)
-   (fs [LET_DEF] \\ STRIP_TAC
+   (REVERSE (Cases_on `destConstAssign b` \\ fs []) THEN1
+     (fs [LET_DEF] \\ fs []
+      \\ Cases_on `b` \\ fs [destConstAssign_def]
+      \\ fs [pEval_def,op_space_reset_def]
+      \\ Cases_on `cut_state_opt o' s` \\ fs []
+      \\ Cases_on `get_vars l x'` \\ fs []
+      \\ Cases_on `pEvalOp (Const x) x'' x'` \\ fs []
+      \\ Cases_on `x'''`
+      \\ IMP_RES_TAC pEvalOp_IMP
+      \\ fs [pEvalOp_def]
+      \\ Cases_on `pEvalOpSpace (Const x) x'` \\ fs []
+      \\ fs [bviTheory.iEvalOp_def,bEvalOp_def,bviTheory.iEvalOpAux_def]
+      \\ REPEAT (BasicProvers.FULL_CASE_TAC \\ fs [])
+      \\ fs [lookup_insert,get_var_def,set_var_def]
+      \\ SRW_TAC [] [] \\ fs [] \\ RES_TAC
+      \\ Q.PAT_ASSUM `x'.locals = xxx` (ASSUME_TAC o GSYM)
+      \\ fs [cut_state_opt_def,lookup_inter_alt] \\ RES_TAC
+      \\ fs [cut_state_def,cut_env_def]
+      \\ REPEAT (BasicProvers.FULL_CASE_TAC \\ fs [])
+      \\ SRW_TAC [] [lookup_inter_alt])
+    \\ fs [LET_DEF] \\ STRIP_TAC
     THEN1 (MATCH_MP_TAC pEval_ConstAssigns \\ METIS_TAC [])
     \\ Q.MATCH_ASSUM_RENAME_TAC
          `FST (pEval (Assign n b l opt,s)) <> SOME Error` []
