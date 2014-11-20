@@ -70,9 +70,12 @@ val pConst_def = Define `
      let (d2,e2) = pConst c2 e1 in
      let (d3,e3) = pConst c3 e1 in
        (If d1 v d2 d3, inter_eq e2 e3)) /\
-  (* case below need to be improved *)
   (pConst (Call ret dest vs handler) env =
-     (Call ret dest vs handler,LN))`;
+     (ConstAssigns vs env (Call ret dest vs handler),
+      if IS_SOME handler then LN
+      else case ret of
+           | NONE => LN
+           | SOME (v,ns) => inter (delete v env) ns))`;
 
 val pEval_ConstAssign = prove(
   ``small_enough_int i ==>
@@ -124,6 +127,35 @@ val pConst_correct_lemma = prove(
     \\ REPEAT BasicProvers.CASE_TAC \\ fs []
     \\ fs [get_var_def,set_var_def,lookup_insert]
     \\ Cases_on `n' = n` \\ fs [] \\ RES_TAC)
+  THEN1 (* Call *)
+   (fs [LET_DEF] \\ STRIP_TAC
+    THEN1 (MATCH_MP_TAC pEval_ConstAssigns \\ fs [])
+    \\ Cases_on `o1` \\ fs [lookup_def] \\ Cases_on `x` \\ fs []
+    \\ fs [lookup_inter_alt,lookup_delete]
+    \\ NTAC 3 STRIP_TAC \\ RES_TAC \\ fs []
+    \\ fs [pEval_def]
+    \\ Cases_on `s.clock = 0` \\ fs []
+    \\ REPEAT (BasicProvers.FULL_CASE_TAC \\ fs [])
+    \\ Q.MATCH_ASSUM_RENAME_TAC
+          `find_code dest args s.code = SOME (vs1,prog)` []
+    \\ fs [lookup_def,lookup_inter_alt,lookup_delete] \\ RES_TAC \\ fs []
+    \\ MP_TAC (Q.SPECL [`prog`,`call_env vs1 (push_env x F (dec_clock s))`]
+         pEval_stack_swap) \\ fs [call_env_def] \\ REPEAT STRIP_TAC
+    \\ POP_ASSUM (MP_TAC o Q.SPEC `(push_env x F (dec_clock s)).stack`)
+    \\ fs [] \\ fs [GSYM call_env_def]
+    \\ `call_env vs1
+           (push_env x F (dec_clock s) with
+            stack := (push_env x F (dec_clock s)).stack) =
+          call_env vs1 (push_env x F (dec_clock s))` by ALL_TAC THEN1
+        (fs [bvp_state_component_equality,call_env_def])
+    \\ REPEAT STRIP_TAC \\ rfs []
+    \\ Q.PAT_ASSUM `pop_env r'' = SOME x''` MP_TAC
+    \\ POP_ASSUM (fn th => ONCE_REWRITE_TAC [th])
+    \\ fs [pop_env_def,push_env_def]
+    \\ REPEAT STRIP_TAC \\ SRW_TAC [] []
+    \\ fs [set_var_def,get_var_def,lookup_insert]
+    \\ RES_TAC \\ fs [cut_env_def] \\ SRW_TAC [] []
+    \\ fs [lookup_inter_alt])
   THEN1 (* Assign *)
    (REVERSE (Cases_on `destConstAssign b` \\ fs []) THEN1
      (fs [LET_DEF] \\ fs []

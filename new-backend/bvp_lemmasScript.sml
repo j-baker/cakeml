@@ -56,7 +56,7 @@ val pEval_locals_LN = store_thm("pEval_locals_LN",
       (t.locals = LN) \/ ?t. res = SOME (Exception t)``,
   REPEAT STRIP_TAC \\ MP_TAC (SPEC_ALL pEval_locals_LN_lemma) \\ fs []);
 
-val LAST_N_LEMMA = prove(
+val LAST_N_LEMMA = store_thm("LAST_N_LEMMA",
   ``(LAST_N (LENGTH xs + 1 + 1) (x::y::xs) = x::y::xs) /\
     (LAST_N (LENGTH xs + 1) (x::xs) = x::xs) /\
     (LAST_N (LENGTH xs) xs = xs)``,
