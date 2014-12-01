@@ -17070,7 +17070,6 @@ val full_s_with_stop_def = Define `
     full_s init with
          local := (full_s init).local with stop_addr := stop_addr`;
 
-
 val set_ref_addr = let
   val th1 =
     SPEC_COMPOSE_RULE [zHEAP_Num1_globals_count,zHEAP_Num2_0,
@@ -17124,7 +17123,204 @@ val zBC_HEAP_INIT = let
     \\ REPEAT STRIP_TAC \\ fs [FUNION_DEF,FAPPLY_FUPDATE_THM]
     \\ fs [EXTENSION] \\ REPEAT STRIP_TAC \\ EQ_TAC \\ REPEAT STRIP_TAC \\ fs []);
   val th = MP th lemma
+  val th = th |> SIMP_RULE std_ss [SPEC_MOVE_COND]
+  val goal = th |> concl |> dest_imp |> fst
+  val th = MP th (RW [] (EVAL goal))
   in th end
+
+
+
+(* generate a few tests *)
+
+fun new_write_code_to_file filename th = let
+  val _ = print ("Extracting code to file \"" ^ filename ^ "\" ... ")
+  (* extract code from th *)
+  val (m,pre,c,post) = (dest_spec o concl) th
+  val cs = (list_dest pred_setSyntax.dest_insert c)
+  val _ = pred_setSyntax.is_empty (last cs) orelse
+          (print ("\n\nCode does not end in empty set. Found:\n\n"^
+                  (term_to_string (last cs)) ^"\n\n"); fail())
+  val cs = butlast cs
+  (* turn into ML *)
+  val p = hd cs |> rator |> free_vars |> hd
+  val pat = ``^p + n2w m``
+  fun dest_pc_plus_offset tm =
+    if tm = p then 0 else
+      let
+        val (x,y) = wordsSyntax.dest_word_add tm
+        val _ = if x = p then () else fail ()
+        val n = y |> wordsSyntax.dest_n2w |> fst |> numSyntax.int_of_term
+      in n end handle HOL_ERR _ =>
+        failwith ("Unable to read offset from " ^ (term_to_string tm))
+  val minus_zero = ``-1w:word8``
+  fun dest_byte_list tm =
+    listSyntax.dest_list tm |> fst
+       |> map (fn tm => if tm = minus_zero then 255
+                        else numSyntax.int_of_term (rand tm) mod 256)
+  fun dest_code_pair tm = let
+    val (x,y) = pairSyntax.dest_pair tm
+    val n = dest_pc_plus_offset x
+    in (n, dest_byte_list y) end
+    handle HOL_ERR _ => (print "\n\n"; print_term tm; print "\n\n";
+                         failwith "unable to extract code_pair")
+  val code_pairs = map dest_code_pair cs
+  (* sort, delete duplicates, check for overlaps etc. *)
+  val vs = sort (fn (x,_) => fn (y:int,_) => x <= y) code_pairs
+  fun del_repetations [] = []
+    | del_repetations [x] = [x]
+    | del_repetations (x::y::xs) = if x = y then del_repetations (x::xs) else
+                                            x :: del_repetations (y::xs)
+  val vs = del_repetations vs
+  fun no_holes i [] = true
+    | no_holes i ((j,c)::xs) =
+       if i = j then no_holes (i + length c) xs else
+       if i < j then failwith ("Gap in the code at location " ^ (int_to_string i))
+       else failwith ("Duplicate code at location " ^ (int_to_string j))
+  val _ = no_holes 0 vs
+  (* compute size *)
+  fun sum f [] k = k
+    | sum f (n::ns) k = sum f ns (k + f n)
+  val total = sum (length o snd) vs 0
+  fun fill c d n s = if size s < n then fill c d n (c ^ s ^ d) else s
+  fun num_to_string n =
+    if n < 1000 then int_to_string n else
+      num_to_string (n div 1000) ^ "," ^ fill "0" "" 3 (int_to_string (n mod 1000))
+  val code_size_str = num_to_string total ^ " bytes"
+  val _ = print (code_size_str ^ " ... ")
+  (* produce output *)
+  val t = TextIO.openOut(filename)
+  fun ex str = TextIO.output(t,str)
+  fun print_bytes [] = ()
+    | print_bytes [b] = ex (int_to_string b)
+    | print_bytes (b::bs) = (ex (int_to_string b); ex ", "; print_bytes bs)
+  fun print_lines [] = ()
+    | print_lines ((n,bs)::rest) = let
+    val _ = ex "\t.byte\t"
+    val _ = print_bytes bs
+    val _ = ex "\n"
+    in print_lines rest end
+  val l1 = "Machine code automatically extracted from a HOL4 theorem."
+  val l2 = "The code size: " ^ code_size_str
+  val l3 = "End of automatically extracted machine code."
+  val _ = ex ("\n\t/*  " ^ l1 ^ "  */\n")
+  val _ = ex ("\t/*  " ^ fill "" " " (size l1) l2 ^ "  */\n\n")
+  val _ = print_lines vs
+  val _ = ex ("\n\t/*  " ^ fill "" " " (size l1) l3 ^ "  */\n")
+  val _ = TextIO.closeOut(t)
+  val _ = print "done.\n"
+  in () end;
+
+local
+  val pat = ``NUMERAL m + (NUMERAL n):num``
+  fun ANY_ADD_EVAL_CONV tm =
+    if can (match_term pat) tm then EVAL tm else NO_CONV tm
+  val th0 = SPEC_COMPOSE_RULE [zHEAP_INIT,zHEAP_ABBREVS,
+              zHEAP_SET_PRINTING_ON,zHEAP_SET_PRINTING_ON]
+in
+  fun generate_test th1 path = let
+    val _ = print " [1]\n "
+    val th = SPEC_COMPOSE_RULE [th0,th1,zHEAP_TERMINATE]
+    val _ = print " [2]\n "
+    val th = th |> SIMP_RULE (srw_ss()) [code_abbrevs_def,first_cs_def]
+              |> SIMP_RULE (srw_ss()) [full_code_abbrevs_def,fetch "-" "full_cs_def"]
+              |> RW [all_code_abbrevs,word_arith_lemma1]
+              |> RW [INSERT_UNION_EQ,UNION_EMPTY]
+              |> CONV_RULE ((RATOR_CONV o RAND_CONV) (DEPTH_CONV ANY_ADD_EVAL_CONV))
+    val _ = print " [3]\n "
+    val th = th |> CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss()) [first_cs_def,first_s_def]))
+    val _ = print " [4]\n "
+    val _ = time (new_write_code_to_file ("wrapper/" ^ path ^ "asm_code.s")) th
+    in th end
+end
+
+(* generate some tests *)
+
+val do_nothing_test = let
+  val th0 = SPEC_COMPOSE_RULE [zHEAP_SET_PRINTING_ON]
+            |> SIMP_RULE (srw_ss()) [HD,TL,NOT_CONS_NIL,SEP_CLAUSES,first_s_def]
+  in generate_test th0 "test-do-nothing/" end;
+
+val print_true_test = let
+  val th0 = SPEC_COMPOSE_RULE [print_true]
+            |> SIMP_RULE (srw_ss()) [HD,TL,NOT_CONS_NIL,SEP_CLAUSES,first_s_def]
+  in generate_test th0 "test-print-true/" end;
+
+val read_print_exit_test = let
+  val th0 = SPEC_COMPOSE_RULE [zHEAP_NEXT_INPUT,zHEAP_READ_INPUT,zHEAP_PUT_CHAR]
+            |> SIMP_RULE (srw_ss()) [HD,TL,NOT_CONS_NIL,SEP_CLAUSES,first_s_def]
+  in generate_test th0 "test-read-print-exit/" end;
+
+val (res,echo_loop_def,echo_loop_pre_def) = x64_compile `
+  echo_loop (s:zheap_state,x1) =
+    let s = s with input := DROP 1 s.input in
+    if s.input = "" then (s,x1) else
+      let x1 = Number (&ORD (HD s.input)) in
+      let s = s with output :=
+                  STRCAT s.output (STRING (CHR (Num (getNumber x1))) "") in
+        echo_loop (s:zheap_state,x1)`
+
+val read_print_loop_test = let
+  val res = res |> SIMP_RULE std_ss [LET_DEF]
+                |> CONV_RULE (DEPTH_CONV (PairRules.PBETA_CONV))
+  val th1 = SPEC_COMPOSE_RULE [res]
+            |> SIMP_RULE (srw_ss()) [HD,TL,NOT_CONS_NIL,SEP_CLAUSES,first_s_def]
+  in generate_test th1 "test-read-print-loop/" end;
+
+val (res,push_loop_def,_) = x64_compile `
+  push_loop (s:zheap_state,x1,stack) =
+    let s = s with input := DROP 1 s.input in
+    if s.input = "" then (s,x1,stack) else
+      let x1 = Number (&ORD (HD s.input)) in
+      let stack = x1::stack in
+        push_loop (s:zheap_state,x1,stack)`
+
+val (res,print_loop_def,_) = x64_compile `
+  print_loop (s:zheap_state,x1,stack) =
+    let (x1,stack) = (HD stack, TL stack) in
+      if isNumber x1 then
+        let s = s with output :=
+                    STRCAT s.output (STRING (CHR (Num (getNumber x1))) "") in
+          print_loop (s:zheap_state,x1,stack)
+      else (s:zheap_state,x1,stack)`
+
+val (res,print_rev_def,_) = x64_compile `
+  print_rev (s:zheap_state,stack) =
+    let x1 = BlockNil in
+    let stack = x1::stack in
+    let (s,x1,stack) = push_loop (s,x1,stack) in
+    let (s,x1,stack) = print_loop (s,x1,stack) in
+      (s,x1,stack)`
+
+val print_rev_test = let
+  val res = res |> SIMP_RULE std_ss [LET_DEF]
+                |> CONV_RULE (DEPTH_CONV (PairRules.PBETA_CONV))
+  val th1 = SPEC_COMPOSE_RULE [res]
+            |> SIMP_RULE (srw_ss()) [HD,TL,NOT_CONS_NIL,SEP_CLAUSES,first_s_def]
+  in generate_test th1 "test-read-print-rev/" end;
+
+(* zHEAP_INSTALL_CODE *)
+
+(*
+  install_x64_code_lists_def
+
+  [(18,0,0), (36,65,0), (36,65,0), (36,65,0), (38,0,0)]
+
+   (20,0,0) -- produces an error
+
+
+  num_bc_def
+
+*)
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -17925,28 +18121,6 @@ val EVEN_w2n_EXTRA = blastLib.BBLAST_PROVE
 
 (*
 
-local
-  val pat = ``NUMERAL m + (NUMERAL n):num``
-  fun ANY_ADD_EVAL_CONV tm =
-    if can (match_term pat) tm then EVAL tm else NO_CONV tm
-  val th0 = SPEC_COMPOSE_RULE [zHEAP_INIT,zHEAP_ABBREVS,
-              zHEAP_SET_PRINTING_ON,zHEAP_SET_PRINTING_ON]
-in
-  fun generate_test th1 = let
-    val _ = print " [1]\n "
-    val th = SPEC_COMPOSE_RULE [th0,th1,zHEAP_TERMINATE]
-    val _ = print " [2]\n "
-    val th = th |> SIMP_RULE (srw_ss()) [code_abbrevs_def,first_cs_def]
-              |> SIMP_RULE (srw_ss()) [full_code_abbrevs_def,fetch "-" "full_cs_def"]
-              |> RW [all_code_abbrevs,word_arith_lemma1]
-              |> RW [INSERT_UNION_EQ,UNION_EMPTY]
-              |> CONV_RULE ((RATOR_CONV o RAND_CONV) (DEPTH_CONV ANY_ADD_EVAL_CONV))
-    val _ = print " [3]\n "
-    val th = th |> CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss()) [first_cs_def,first_s_def]))
-    val _ = print " [4]\n "
-    val _ = time (new_write_code_to_file "wrapper/asm_code.s") th
-    in th end
-end
 
 
 

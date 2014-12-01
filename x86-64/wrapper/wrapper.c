@@ -31,5 +31,5 @@ int main(int argc, char** argv) {
        : /* clobbered */ "%rax","%rbx","%rcx","%rdx","%rbp",
          "%r8","%r9","%r10","%r11","%r12","%r13","%r14","%r15","memory");
   printf("\n -- CakeML shutting down --\n");
-  return 0;
+  exit(0);
 }
