@@ -17128,6 +17128,122 @@ val zBC_HEAP_INIT = let
   val th = MP th (RW [] (EVAL goal))
   in th end
 
+val standalone_bc_init_state_def = Define `
+  standalone_bc_init_state init_pc bc_code =
+    init_bc_state (ARB with <| pc := init_pc;
+                               code := bc_code;
+                               inst_length := x64_inst_length |>)`;
+
+val standalone_bc_init_state_lemma = prove(
+  ``((standalone_bc_init_state init_pc bc_code).inst_length = x64_inst_length) /\
+    ((standalone_bc_init_state init_pc bc_code).code = bc_code) /\
+    ((standalone_bc_init_state init_pc bc_code).pc = init_pc)``,
+  EVAL_TAC);
+
+val jump = let
+  val ((th,_,_),_) = prog_x64Lib.x64_spec "48E9"
+  val th = th |> RW [GSYM IMM32_def] |> Q.INST [`rip`|->`p`]
+  in th end
+
+val CODE_POOL_LEMMA = prove(
+  ``!c c' i. ?r. CODE_POOL i (c UNION c') = CODE_POOL i c * r``,
+  REPEAT STRIP_TAC \\ REWRITE_TAC [CODE_POOL_def,IMAGE_UNION,BIGUNION_UNION,STAR_def]
+  \\ Q.EXISTS_TAC `\s. s = BIGUNION (IMAGE i c') DIFF BIGUNION (IMAGE i c)`
+  \\ ONCE_REWRITE_TAC [FUN_EQ_THM] \\ SIMP_TAC std_ss []
+  \\ REPEAT STRIP_TAC \\ EQ_TAC \\ REPEAT STRIP_TAC
+  \\ FULL_SIMP_TAC bool_ss [SPLIT_def,EXTENSION,IN_BIGUNION,IN_DIFF,
+       IN_UNION,DISJOINT_DEF,IN_INTER,NOT_IN_EMPTY] \\ METIS_TAC []);
+
+val TEMPORAL_EXTEND_CODE = prove(
+  ``TEMPORAL m c phi ==> !c1. TEMPORAL m (c UNION c1) phi``,
+  PairCases_on `m` \\ fs [TEMPORAL_def] \\ REPEAT STRIP_TAC
+  \\ `?r1. CODE_POOL m2 (c UNION c1) = CODE_POOL m2 c * r1` by
+        METIS_TAC [CODE_POOL_LEMMA]
+  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`state`,`seq'`,`r1 * r`])
+  \\ fs [STAR_ASSOC]);
+
+val SEP_REFINE_DISJ = prove(
+  ``SEP_REFINE (p \/ q) m1 m2 s <=>
+    SEP_REFINE q m1 m2 s \/ SEP_REFINE p m1 m2 s``,
+  fs [SEP_REFINE_def,SEP_DISJ_def] \\ METIS_TAC []);
+
+val TEMPORAL_LEMMA = prove(
+  ``TEMPORAL m (c1 UNION c2) (T_IMPLIES (NOW p) (T_DISJ q (EVENTUALLY (NOW err)))) ==>
+    SPEC m i (c1 UNION c2) (p \/ err) ==>
+    TEMPORAL m (c1 UNION c2) (T_IMPLIES (NOW i) (T_DISJ (EVENTUALLY q)
+                                            (EVENTUALLY (NOW err))))``,
+  fs [SPEC_EQ_TEMPORAL]
+  \\ Q.SPEC_TAC (`c1 UNION c2`,`c`)
+  \\ REPEAT STRIP_TAC
+  \\ PairCases_on `m`
+  \\ fs [TEMPORAL_def,LET_DEF]
+  \\ fs [T_IMPLIES_def,T_DISJ_def,EVENTUALLY_def,NOW_def]
+  \\ fs [N_NEXT_thm,EVENTUALLY_def,NOW_def]
+  \\ REVERSE (REPEAT STRIP_TAC) THEN1 METIS_TAC []
+  \\ Q.MATCH_ASSUM_RENAME_TAC `rel_sequence m1 s state` []
+  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`state`,`s`,`r`]) \\ fs []
+  \\ REVERSE (REPEAT STRIP_TAC) THEN1 METIS_TAC []
+  \\ fs [SEP_CLAUSES,SEP_REFINE_DISJ] THEN1 METIS_TAC []
+  \\ IMP_RES_TAC rel_sequence_shift
+  \\ POP_ASSUM (ASSUME_TAC o Q.SPEC `k`)
+  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`(s (k:num))`,`\j. s (k + j:num)`,`r`])
+  \\ fs [] \\ REPEAT STRIP_TAC
+  THEN1 (DISJ1_TAC \\ Q.EXISTS_TAC `k` \\ fs [AC ADD_ASSOC ADD_COMM])
+  \\ METIS_TAC []);
+
+val TEMPORAL_THM = prove(
+  ``TEMPORAL m c2 (T_IMPLIES (NOW p) (T_DISJ q (EVENTUALLY (NOW err)))) ==>
+    SPEC m i c1 (p \/ err) ==>
+    TEMPORAL m (c1 UNION c2) (T_IMPLIES (NOW i)
+      (T_DISJ (EVENTUALLY q) (EVENTUALLY (NOW err))))``,
+  METIS_TAC [TEMPORAL_LEMMA,TEMPORAL_EXTEND_CODE,SPEC_ADD_CODE,UNION_COMM]);
+
+val EVENTUALLY_zBYTECODE_DIVERGED = prove(
+  ``EVENTUALLY (zBYTECODE_DIVERGED y (x,z)) =
+    zBYTECODE_DIVERGED y (x,z)``,
+  fs [EVENTUALLY_def,FUN_EQ_THM,zBYTECODE_DIVERGED_def,ALWAYS_def,EVENTUALLY_def]
+  \\ REPEAT STRIP_TAC \\ EQ_TAC \\ REPEAT STRIP_TAC THEN1
+   (POP_ASSUM (MP_TAC o Q.SPEC `k'`) \\ fs []
+    \\ REPEAT STRIP_TAC \\ Q.EXISTS_TAC `k + k''`
+    \\ fs [AC ADD_COMM ADD_ASSOC])
+  \\ Q.EXISTS_TAC `0` \\ fs []);
+
+val zSTANDALONE_DIVERGES = save_thm("zSTANDALONE_DIVERGES",let
+  val th = zBC_HEAP_INIT
+  val cb = get_pc th |> rand
+  val cb = ``^cb + 6w``
+  val f2 = find_term (can (match_term ``FEMPTY |+ (1:num,xxx:'a)``)) (concl th)
+  val lemma = prove(
+    ``EVEN (w2n ^cb) = EVEN (w2n (p:word64))``,
+    SIMP_TAC std_ss [EVEN_w2n] \\ blastLib.BBLAST_TAC)
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+  val s = th |> concl |> find_term (can (match_term ``full_s_with_stop ss ppp``))
+  val th = zBC_HEAP_DIVERGES
+    |> Q.INST [`ev`|->`T`,`stack`|->`[]`,`out`|->`""`,`x`|->`RefPtr 1`,
+               `cs`|->`full_cs init p`,`s`|->`^s`]
+    |> DISCH_ALL |> Q.GEN `sb` |> SIMP_RULE std_ss [LENGTH]
+    |> Q.GEN `cb` |> SPEC cb
+    |> Q.GEN `f2` |> SPEC f2
+    |> CONV_RULE (RATOR_CONV (SIMP_CONV std_ss
+            [FDOM_FUPDATE,FDOM_FEMPTY,IN_INSERT,NOT_IN_EMPTY]))
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> Q.INST [`s1`|->`standalone_bc_init_state init_pc bc_code`]
+    |> RW [standalone_bc_init_state_lemma,lemma]
+    |> SIMP_RULE std_ss [AC STAR_COMM STAR_ASSOC]
+  val th1 = SPEC_COMPOSE_RULE [zBC_HEAP_INIT,jump]
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> SIMP_RULE std_ss [AC STAR_COMM STAR_ASSOC]
+    |> Q.INST [`cs`|->`full_cs init p`,`cb`|->`^cb`]
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> Q.INST [`i`|->`<| pc := init_pc; code := bc_code;
+                         inst_length := x64_inst_length |>`]
+    |> RW [GSYM standalone_bc_init_state_def]
+    |> DISCH ``SIGN_EXTEND 32 64 (w2n (imm32:word32)) = 2 * init_pc``
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+  val thA = MATCH_MP TEMPORAL_THM (th |> UNDISCH_ALL)
+  in MATCH_MP thA (UNDISCH_ALL th1)
+     |> RW [EVENTUALLY_zBYTECODE_DIVERGED]
+     |> DISCH_ALL end);
 
 
 (* generate a few tests *)
