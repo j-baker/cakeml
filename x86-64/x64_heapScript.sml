@@ -13658,7 +13658,15 @@ val ic_Any_with_test = let
       (~b1 ==> SPEC m p c2 q2) ==>
       c2 SUBSET c1 ==>
       SPEC m p c1 (q1 \/ q2)``,
-    cheat);
+    Cases_on `b1` \\ fs []
+    \\ REPEAT STRIP_TAC
+    \\ `SEP_IMP q1 (q1 \/ q2)` by fs [SEP_IMP_def,SEP_DISJ_def]
+    \\ `SEP_IMP q2 (q1 \/ q2)` by fs [SEP_IMP_def,SEP_DISJ_def]
+    \\ IMP_RES_TAC SPEC_WEAKEN
+    \\ IMP_RES_TAC SPEC_ADD_CODE
+    \\ REPEAT (FIRST_X_ASSUM (MP_TAC o Q.SPEC `c1`))
+    \\ `c2 UNION c1 = c1` by (fs [SUBSET_DEF,EXTENSION] \\ METIS_TAC [])
+    \\ fs []);
   val th = MATCH_MP lemma (CONJ (DISCH_ALL th1) (DISCH_ALL th2))
   val goal = th |> concl |> dest_imp |> fst
   val lemma = prove(goal,
