@@ -17216,7 +17216,7 @@ val EVENTUALLY_zBYTECODE_DIVERGED = prove(
     \\ fs [AC ADD_COMM ADD_ASSOC])
   \\ Q.EXISTS_TAC `0` \\ fs []);
 
-val zSTANDALONE_DIVERGES = save_thm("zSTANDALONE_DIVERGES",let
+val zSTANDALONE_DIVERGES = curry save_thm "zSTANDALONE_DIVERGES" let
   val th = zBC_HEAP_INIT
   val cb = get_pc th |> rand
   val cb = ``^cb + 6w``
@@ -17251,7 +17251,181 @@ val zSTANDALONE_DIVERGES = save_thm("zSTANDALONE_DIVERGES",let
   val thA = MATCH_MP TEMPORAL_THM (th |> UNDISCH_ALL)
   in MATCH_MP thA (UNDISCH_ALL th1)
      |> RW [EVENTUALLY_zBYTECODE_DIVERGED]
-     |> DISCH_ALL end);
+     |> DISCH_ALL end;
+
+val NEXT_N_thm = prove(
+  ``!k p f s. N_NEXT k p f s = p f (\n. s (n + k))``,
+  Induct \\ fs [N_NEXT_def]
+  \\ CONV_TAC (DEPTH_CONV ETA_CONV) \\ fs [NEXT_def,ADD1,ADD_ASSOC]);
+
+val SPEC_N_IMP_SPEC = store_thm("SPEC_N_IMP_SPEC",
+  ``SPEC_N n model pre code post err ==>
+    SPEC model pre code (post \/ err)``,
+  `?to_set next instr less allow. model = (to_set,next,instr,less,allow)`
+           by METIS_TAC [PAIR]
+  \\ FULL_SIMP_TAC std_ss [SPEC_N_def,SPEC_EQ_TEMPORAL,TEMPORAL_def,LET_DEF]
+  \\ REPEAT STRIP_TAC \\ RES_TAC
+  \\ FULL_SIMP_TAC std_ss [T_IMPLIES_def] \\ REPEAT STRIP_TAC \\ RES_TAC
+  \\ FULL_SIMP_TAC std_ss [T_OR_F_def]
+  \\ FULL_SIMP_TAC std_ss [NEXT_def,EVENTUALLY_def,N_NEXT_thm]
+  THEN1 (Q.EXISTS_TAC `k+n` \\ FULL_SIMP_TAC std_ss [ADD_ASSOC]
+    \\ POP_ASSUM MP_TAC
+    \\ SIMP_TAC std_ss [NOW_def,SEP_REFINE_def,SEP_CLAUSES]
+    \\ SIMP_TAC std_ss [SEP_DISJ_def] \\ METIS_TAC [])
+  THEN1 (Q.EXISTS_TAC `k` \\ FULL_SIMP_TAC std_ss [ADD_ASSOC]
+    \\ POP_ASSUM MP_TAC
+    \\ SIMP_TAC std_ss [NOW_def,SEP_REFINE_def,SEP_CLAUSES]
+    \\ SIMP_TAC std_ss [SEP_DISJ_def] \\ METIS_TAC []));
+
+val bc_terminates_def = Define `
+  bc_terminates s1 s2 =
+    ?n b. NRC bc_next n s1 s2 /\ (bc_fetch s2 = SOME (Stop b))`;
+
+val SPEC_EXTEND_CODE = prove(
+  ``SPEC X64_MODEL p ((a + n2w n,xs) INSERT code) q ==>
+    !zs.
+      (?ys1 ys2. (zs = (ys1 ++ xs ++ ys2)) /\ (n = LENGTH ys1)) ==>
+      SPEC X64_MODEL p ((a,zs) INSERT code) q``,
+  cheat);
+
+val SPEC_ADD_DISJ_BOTH = prove(
+  ``SPEC m p c q ==> !r. SPEC m (p \/ r) c (q \/ r)``,
+  fs [SPEC_PRE_DISJ,SPEC_ADD_DISJ] \\ REPEAT STRIP_TAC
+  \\ `SEP_IMP r (q \/ r)` by fs [SEP_IMP_def,SEP_DISJ_def]
+  \\ METIS_TAC [SPEC_REFL,SPEC_WEAKEN]);
+
+val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
+  val th1 = zBC_HEAP_N
+    |> Q.SPECL [`n`,`standalone_bc_init_state init_pc bc_code`,`s2`]
+    |> UNDISCH_ALL
+    |> MATCH_MP SPEC_N_IMP_SPEC |> DISCH_ALL
+    |> RW [standalone_bc_init_state_lemma]
+    |> Q.INST [`stack`|->`[]`]
+    |> RW [LENGTH,ADD1] |> SIMP_RULE std_ss []
+    |> UNDISCH_ALL
+  val th2 =
+    zBC_HEAP_Stop
+    |> Q.INST [`s1`|->`s2`,`s2`|->`s3`,`stack`|->`[]`]
+    |> UNDISCH_ALL
+  val th3 =
+    MATCH_MP SPEC_EXTEND_CODE th2 |> Q.SPEC `x64_code 0 bc_code`
+    |> DISCH_ALL |> SIMP_RULE std_ss []
+    |> SIMP_RULE std_ss [AND_IMP_INTRO]
+  val goal = concl th3 |> dest_imp |> fst
+  val goal =
+    ``(bc_fetch s2 = SOME (Stop b)) /\ (s2.code = bc_code) ==> ^goal``
+  val lemma = prove(goal,cheat)
+  val th4 = MP th3 (lemma |> UNDISCH)
+  val set_lemma = prove(
+    ``x INSERT (s UNION (x INSERT s)) = x INSERT s``,
+    fs [EXTENSION] \\ METIS_TAC [])
+  val th5 = SPEC_COMPOSE_RULE [th1,th4] |> RW [set_lemma]
+  val th = zBC_HEAP_INIT
+  val tm1 = find_term (can (match_term ``zBC_HEAP x1 x2 x3``)) (concl th)
+  val tm2 = find_term (can (match_term ``zBC_HEAP x1 x2 x3``)) (concl th5)
+  val x1 = tm1 |> rator |> rand
+  val x2 = tm2 |> rator |> rand
+  val y1 = tm1 |> rand
+  val y2 = tm2 |> rand
+  val th6 = th5 |> INST (fst (match_term x2 x1)) |> INST (fst (match_term y2 y1))
+  val cb = get_pc th |> rand
+  val cb = ``^cb + 6w``
+  val f2 = find_term (can (match_term ``FEMPTY |+ (1:num,xxx:'a)``)) (concl th)
+  val lemma = prove(
+    ``EVEN (w2n ^cb) = EVEN (w2n (p:word64))``,
+    SIMP_TAC std_ss [EVEN_w2n] \\ blastLib.BBLAST_TAC)
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+  val s = th |> concl |> find_term (can (match_term ``full_s_with_stop ss ppp``))
+  val th = th6
+    |> Q.INST [`ev`|->`T`,`stack`|->`[]`,`out`|->`""`,`x`|->`RefPtr 1`,
+               `cs`|->`full_cs init p`,`s`|->`^s`,`cb:word64`|->`^cb`]
+    |> DISCH_ALL |> RW [AND_IMP_INTRO]
+    |> CONV_RULE (RATOR_CONV (SIMP_CONV (srw_ss())
+            [FDOM_FUPDATE,FDOM_FEMPTY,IN_INSERT,NOT_IN_EMPTY]))
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> RW [standalone_bc_init_state_lemma,lemma]
+    |> SIMP_RULE std_ss [AC STAR_COMM STAR_ASSOC]
+    |> UNDISCH_ALL
+  val th1 = SPEC_COMPOSE_RULE [zBC_HEAP_INIT,jump]
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> SIMP_RULE std_ss [AC STAR_COMM STAR_ASSOC]
+    |> Q.INST [`cs`|->`full_cs init p`,`cb`|->`^cb`]
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+    |> Q.INST [`i`|->`<| pc := init_pc; code := bc_code;
+                         inst_length := x64_inst_length |>`]
+    |> RW [GSYM standalone_bc_init_state_def]
+    |> DISCH ``SIGN_EXTEND 32 64 (w2n (imm32:word32)) = 2 * init_pc``
+    |> SIMP_RULE std_ss [word_arith_lemma1,ADD_ASSOC]
+  val thA = SPEC_COMPOSE_RULE [UNDISCH_ALL th1,th]
+     |> RW [EVAL ``(full_s_with_stop init w).local.stop_addr``]
+  val thB =
+    thA |> SIMP_RULE std_ss [zBC_HEAP_def,LET_DEF,MAP,HD,TL,MAP_APPEND]
+        |> CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss()) []))
+        |> SIMP_RULE std_ss [SEP_CLAUSES]
+  val tm1 = thB |> concl |> rand
+  val tm2 = zHEAP_TERMINATE |> concl
+  val p1 = find_term (can (match_term ``zHEAP pat``)) tm1
+  val p2 = find_term (can (match_term ``zHEAP pat``)) tm2
+  val (i,_) = match_term p2 p1
+  val p = get_pc thB |> rand
+  val th1 = INST i (zHEAP_TERMINATE |> Q.INST [`p`|->`^p`])
+    |> CONV_RULE (RAND_CONV (SIMP_CONV (srw_ss()) []))
+    |> RW [EVAL ``(full_s_with_stop init w).local.printing_on``,
+           EVAL ``1w = 0w:word64``]
+    |> SIMP_RULE std_ss [word_arith_lemma1]
+    |> Q.GENL [`x3`,`x2`]
+    |> SIMP_RULE std_ss [SPEC_PRE_EXISTS]
+  val th2 =
+    MATCH_MP SPEC_ADD_DISJ_BOTH th1
+    |> Q.SPEC `zHEAP_ERROR (full_cs init p)`
+    |> SIMP_RULE std_ss [SEP_CLAUSES]
+  val f = SIMP_RULE (srw_ss()++star_ss) []
+          o RW [EVAL ``(full_s_with_stop init w).local.printing_on``,
+             EVAL ``1w = 0w:word64``]
+  val comp = ISPEC ``X64_MODEL`` SPEC_COMPOSE
+  val th = MATCH_MP comp (CONJ (thB |> f) (th2 |> f))
+  in th end;
+
+
+
+
+(* COMMENT *)
+
+
+
+(*
+
+  val (_,_,_,m1) = dest_spec (thB |> f |> concl)
+  val (_,m2,_,_) = dest_spec (th2 |> f |> concl)
+
+  fun term_diff tm1 tm2 =
+    if is_comb tm1 andalso is_comb tm2 then let
+      val (x1,y1) = dest_comb tm1
+      val (x2,y2) = dest_comb tm2
+      in if aconv x1 x2 then term_diff y1 y2 else
+         if aconv y1 y2 then term_diff x1 x2 else
+           (tm1,tm2)
+      end else
+    if is_abs tm1 andalso is_abs tm2 then let
+      val (x1,y1) = dest_abs tm1
+      val (x2,y2) = dest_abs tm2
+      in if aconv x1 x2 then term_diff y1 y2 else
+         if aconv y1 y2 then term_diff x1 x2 else
+           (tm1,tm2)
+      end else (T,T)
+
+val tm1 = m1
+val tm2 = m2
+
+val tm1 = y1
+val tm2 = y2
+
+
+  term_diff m1 m2
+
+
+*)
+
 
 
 (* generate a few tests *)
