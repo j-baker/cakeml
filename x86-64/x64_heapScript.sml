@@ -17251,7 +17251,8 @@ val zSTANDALONE_DIVERGES = curry save_thm "zSTANDALONE_DIVERGES" let
   val thA = MATCH_MP TEMPORAL_THM (th |> UNDISCH_ALL)
   in MATCH_MP thA (UNDISCH_ALL th1)
      |> RW [EVENTUALLY_zBYTECODE_DIVERGED]
-     |> DISCH_ALL end;
+     |> UNDISCH_ALL
+     |> DISCH ``bc_diverges (standalone_bc_init_state init_pc bc_code)`` end;
 
 val NEXT_N_thm = prove(
   ``!k p f s. N_NEXT k p f s = p f (\n. s (n + k))``,
@@ -17286,13 +17287,35 @@ val SPEC_EXTEND_CODE = prove(
     !zs.
       (?ys1 ys2. (zs = (ys1 ++ xs ++ ys2)) /\ (n = LENGTH ys1)) ==>
       SPEC X64_MODEL p ((a,zs) INSERT code) q``,
-  cheat);
+  cheat); (* fiddly but easy *)
 
 val SPEC_ADD_DISJ_BOTH = prove(
   ``SPEC m p c q ==> !r. SPEC m (p \/ r) c (q \/ r)``,
   fs [SPEC_PRE_DISJ,SPEC_ADD_DISJ] \\ REPEAT STRIP_TAC
   \\ `SEP_IMP r (q \/ r)` by fs [SEP_IMP_def,SEP_DISJ_def]
   \\ METIS_TAC [SPEC_REFL,SPEC_WEAKEN]);
+
+val NRC_bc_next_code = prove(
+  ``!n s1 s2. NRC bc_next n s1 s2 ==> (s1.code = s2.code)``,
+  Induct \\ fs [NRC,PULL_EXISTS] \\ REPEAT STRIP_TAC \\ RES_TAC
+  \\ IMP_RES_TAC bytecodeExtraTheory.bc_next_preserves_code \\ METIS_TAC []);
+
+val NRC_bc_next_standalone_bc_init_state = prove(
+  ``NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2 ==>
+    (s2.code = bc_code)``,
+  REPEAT STRIP_TAC \\ IMP_RES_TAC NRC_bc_next_code
+  \\ fs [standalone_bc_init_state_def,init_bc_state_def]);
+
+val NRC_lemma = prove(
+  ``(((?b. bc_fetch s2 = SOME (Stop b)) /\
+     ?n. NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2) /\
+     (s2.code = bc_code) ==> t) ==>
+    (bc_terminates (standalone_bc_init_state init_pc bc_code) s2 ==> t)``,
+  Cases_on `t` \\ fs []
+  \\ REPEAT STRIP_TAC
+  \\ fs [bc_terminates_def] \\ fs []
+  \\ IMP_RES_TAC NRC_bc_next_standalone_bc_init_state
+  \\ METIS_TAC []);
 
 val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
   val th1 = zBC_HEAP_N
@@ -17314,7 +17337,7 @@ val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
   val goal = concl th3 |> dest_imp |> fst
   val goal =
     ``(bc_fetch s2 = SOME (Stop b)) /\ (s2.code = bc_code) ==> ^goal``
-  val lemma = prove(goal,cheat)
+  val lemma = prove(goal,cheat) (* simple-ish *)
   val th4 = MP th3 (lemma |> UNDISCH)
   val set_lemma = prove(
     ``x INSERT (s UNION (x INSERT s)) = x INSERT s``,
@@ -17384,7 +17407,65 @@ val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
              EVAL ``1w = 0w:word64``]
   val comp = ISPEC ``X64_MODEL`` SPEC_COMPOSE
   val th = MATCH_MP comp (CONJ (thB |> f) (th2 |> f))
+  val th = th
+    |> DISCH ``(s2:bc_state).code = bc_code``
+    |> DISCH ``NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2``
+    |> DISCH ``bc_fetch s2 = SOME (Stop b)``
+    |> Q.GENL [`n`,`b`] |> SIMP_RULE std_ss [GSYM PULL_EXISTS,AND_IMP_INTRO]
+    |> MATCH_MP NRC_lemma
   in th end;
+
+val combine_lemma = prove(
+  ``(!s2.
+       bc_terminates (standalone_bc_init_state init_pc bc_code) s2 ==>
+       TEMPORAL m c1
+         (T_IMPLIES (NOW (INIT_STATE init * (~zS * zPC p)))
+           (EVENTUALLY
+              (NOW
+                 (zHEAP_OUTPUT (full_cs init p,s2.output) \/
+                  zHEAP_ERROR (full_cs init p)))))) /\
+    (bc_diverges (standalone_bc_init_state init_pc bc_code) ==>
+     TEMPORAL m c2
+       (T_IMPLIES (NOW (INIT_STATE init * (~zS * zPC p)))
+        (T_DISJ (zBYTECODE_DIVERGED "" (full_cs init p,w))
+           (EVENTUALLY (NOW (zHEAP_ERROR (full_cs init p))))))) ==>
+    (bc_executes_ok (standalone_bc_init_state init_pc bc_code) ==>
+     TEMPORAL m (c1 UNION c2)
+       (T_IMPLIES (NOW (INIT_STATE init * (~zS * zPC p)))
+         (T_DISJ (EVENTUALLY (NOW (zHEAP_ERROR (full_cs init p))))
+                 (if bc_diverges (standalone_bc_init_state init_pc bc_code) then
+                    (zBYTECODE_DIVERGED "" (full_cs init p,w))
+                  else (EVENTUALLY (NOW (SEP_EXISTS s2.
+                    zHEAP_OUTPUT (full_cs init p,s2.output) *
+                    cond (bc_terminates
+               (standalone_bc_init_state init_pc bc_code) s2))))))))``,
+  Cases_on `bc_diverges (standalone_bc_init_state init_pc bc_code)` \\ fs []
+  \\ cheat); (* in principle easy, but details might be ugly *)
+
+val init_pc_bound = prove(
+  ``init_pc < 2**30 ==>
+    (SIGN_EXTEND 32 64 ((w2n:word32->num) (n2w (2 * init_pc))) = 2 * init_pc)``,
+  fs [n2w_w2n] \\ REPEAT STRIP_TAC
+  \\ `(2 * init_pc) < 2147483648` by DECIDE_TAC
+  \\ `(2 * init_pc) < 4294967296` by DECIDE_TAC
+  \\ fs [bitTheory.SIGN_EXTEND_def,bitTheory.BIT_def,bitTheory.BITS_THM,LET_DEF]
+  \\ IMP_RES_TAC LESS_DIV_EQ_ZERO \\ fs [])
+
+val zSTANDALONE_CORRECT = curry save_thm "zSTANDALONE_CORRECT" let
+  val th1 =
+    zSTANDALONE_TERMINATES
+    |> RW [SPEC_EQ_TEMPORAL]
+    |> Q.GEN `s2`
+  val th2 = zSTANDALONE_DIVERGES
+  val th = MATCH_MP combine_lemma (CONJ th1 th2)
+  val th = th
+    |> DISCH ``SIGN_EXTEND 32 64 (w2n (imm32:word32)) = 2 * init_pc``
+    |> Q.INST [`imm32`|->`n2w (2 * init_pc)`]
+    |> (fn th => MATCH_MP th (UNDISCH init_pc_bound))
+    |> UNDISCH_ALL (* TODO: sort out code segment *)
+    |> DISCH_ALL
+  in th end;
+
 
 
 
