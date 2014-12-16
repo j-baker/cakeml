@@ -16900,6 +16900,10 @@ val SPEC_N_def = Define `
      TEMPORAL model code
        (T_IMPLIES (NOW pre) (T_OR_F (N_NEXT n (EVENTUALLY (NOW post))) err))`
 
+val SPEC_1_EQ_SPEC_N = prove(
+  ``SPEC_1 m p c q e <=> SPEC_N 1 m p c q e``,
+  EVAL_TAC);
+
 val TEMPORAL_IMP_T_OR_F_EVENTUALLY = store_thm("TEMPORAL_IMP_T_OR_F_EVENTUALLY",
   ``TEMPORAL model code (T_IMPLIES p1 (T_OR_F (EVENTUALLY p1) p2))``,
   PairCases_on`model` >>
@@ -16914,35 +16918,39 @@ val rel_sequence_shift = prove(
   \\ Cases_on `?s. n (seq' (i + n')) s` \\ ASM_REWRITE_TAC []
   \\ FULL_SIMP_TAC std_ss [ADD1,ADD_ASSOC] \\ METIS_TAC []);
 
+val N_NEXT_thm = prove(
+  ``!k p f s. N_NEXT k p f s = p f (\n. s (n + k))``,
+  Induct \\ fs [N_NEXT_def,NEXT_def,ADD1,AC ADD_COMM ADD_ASSOC]
+  \\ CONV_TAC (DEPTH_CONV ETA_CONV) \\ fs []);
+
+val SPEC_N_COMPOSE = prove(
+  ``SPEC_N m model p2 c p3 err ==>
+    SPEC_N n model p1 c p2 err ==>
+    SPEC_N (m+n) model p1 c p3 err``,
+  PairCases_on `model`
+  \\ fs [SPEC_N_def,T_OR_F_thm,TEMPORAL_def,LET_DEF]
+  \\ fs [T_IMPLIES_def,T_DISJ_def,EVENTUALLY_def,NOW_def]
+  \\ fs [N_NEXT_thm,EVENTUALLY_def,NOW_def]
+  \\ REVERSE (REPEAT STRIP_TAC) THEN1 METIS_TAC []
+  \\ Q.MATCH_ASSUM_RENAME_TAC `rel_sequence model1 s state` []
+  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`state`,`s`,`r`]) \\ fs []
+  \\ REVERSE (REPEAT STRIP_TAC)
+  THEN1 METIS_TAC [] THEN1 METIS_TAC [] THEN1 METIS_TAC []
+  \\ IMP_RES_TAC rel_sequence_shift
+  \\ POP_ASSUM (ASSUME_TAC o Q.SPEC `k + n`)
+  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`(s (k + n:num))`,`\j. s (k + n + j:num)`,`r`])
+  \\ fs [] \\ REPEAT STRIP_TAC
+  THEN1 (DISJ1_TAC \\ Q.EXISTS_TAC `k+k'` \\ fs [AC ADD_COMM ADD_ASSOC])
+  THEN1 (DISJ2_TAC \\ METIS_TAC [])
+  THEN1 (DISJ2_TAC \\ Q.EXISTS_TAC `k+k'+n` \\ fs [AC ADD_COMM ADD_ASSOC])
+  THEN1 (DISJ2_TAC \\ METIS_TAC []));
+
 val SPEC_N_1_IMP_SUC = store_thm("SPEC_N_1_IMP_SUC",
-  ``∀n model pre1 pre2 post code err.
-    SPEC_N n model pre2 code post err ∧ SPEC_1 model pre1 code pre2 err ⇒
-    SPEC_N (SUC n) model pre1 code post err``,
-  rpt gen_tac >>
-  PairCases_on`model` >>
-  simp[SPEC_N_def,N_NEXT_def,SPEC_1_def,TEMPORAL_def,T_IMPLIES_def,T_OR_F_def,EVENTUALLY_def] >>
-  rw[] >>
-  first_x_assum(fn th => first_assum(mp_tac o MATCH_MP th)) >>
-  first_x_assum(fn th => disch_then(mp_tac o C MATCH_MP th)) >>
-  reverse strip_tac >- (METIS_TAC[]) >>
-  fs[NEXT_def,EVENTUALLY_def,N_NEXT_THM] >>
-  qmatch_assum_abbrev_tac`NOW pre2 ff ss` >>
-  `?state'. rel_sequence model1 ss state'` by
-     (UNABBREV_ALL_TAC
-      \\ Q.EXISTS_TAC `seq' (k + 1)`
-      \\ IMP_RES_TAC rel_sequence_shift
-      \\ POP_ASSUM (MP_TAC o Q.SPEC `k+1`)
-      \\ MATCH_MP_TAC (METIS_PROVE [] ``(b1=b2)==>(b1==>b2)``)
-      \\ REPEAT (AP_TERM_TAC ORELSE AP_THM_TAC)
-      \\ fs [FUN_EQ_THM,AC ADD_COMM ADD_ASSOC]) >>
-  first_x_assum(qspecl_then[`state'`,`ss`,`r`]mp_tac) >>
-  simp[] >>
-  strip_tac >- (
-    disj1_tac >>
-    fs[Abbr`ss`] >>
-    qexists_tac`k+k'` >> fsrw_tac[ARITH_ss][] ) >>
-  fs[Abbr`ss`] >> disj2_tac >>
-  qexists_tac`k+k'+1` >> fsrw_tac[ARITH_ss][] )
+  ``!n model pre1 pre2 post code err.
+      SPEC_N n model pre2 code post err /\ SPEC_1 model pre1 code pre2 err ==>
+      SPEC_N (SUC n) model pre1 code post err``,
+  REPEAT STRIP_TAC \\ fs [ADD1,SPEC_1_EQ_SPEC_N]
+  \\ IMP_RES_TAC SPEC_N_COMPOSE);
 
 val zBC_HEAP_N = prove(
   ``!n s1 s2.
@@ -16997,33 +17005,6 @@ val SPEC_IMP_SPEC_N = prove(
 
 val SPEC_N_Stop =
   MATCH_MP SPEC_IMP_SPEC_N (UNDISCH zBC_HEAP_Stop)
-
-val N_NEXT_thm = prove(
-  ``!k p f s. N_NEXT k p f s = p f (\n. s (n + k))``,
-  Induct \\ fs [N_NEXT_def,NEXT_def,ADD1,AC ADD_COMM ADD_ASSOC]
-  \\ CONV_TAC (DEPTH_CONV ETA_CONV) \\ fs []);
-
-val SPEC_N_COMPOSE = prove(
-  ``SPEC_N m model p2 c p3 err ==>
-    SPEC_N n model p1 c p2 err ==>
-    SPEC_N (m+n) model p1 c p3 err``,
-  PairCases_on `model`
-  \\ fs [SPEC_N_def,T_OR_F_thm,TEMPORAL_def,LET_DEF]
-  \\ fs [T_IMPLIES_def,T_DISJ_def,EVENTUALLY_def,NOW_def]
-  \\ fs [N_NEXT_thm,EVENTUALLY_def,NOW_def]
-  \\ REVERSE (REPEAT STRIP_TAC) THEN1 METIS_TAC []
-  \\ Q.MATCH_ASSUM_RENAME_TAC `rel_sequence model1 s state` []
-  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`state`,`s`,`r`]) \\ fs []
-  \\ REVERSE (REPEAT STRIP_TAC)
-  THEN1 METIS_TAC [] THEN1 METIS_TAC [] THEN1 METIS_TAC []
-  \\ IMP_RES_TAC rel_sequence_shift
-  \\ POP_ASSUM (ASSUME_TAC o Q.SPEC `k + n`)
-  \\ FIRST_X_ASSUM (MP_TAC o Q.SPECL [`(s (k + n:num))`,`\j. s (k + n + j:num)`,`r`])
-  \\ fs [] \\ REPEAT STRIP_TAC
-  THEN1 (DISJ1_TAC \\ Q.EXISTS_TAC `k+k'` \\ fs [AC ADD_COMM ADD_ASSOC])
-  THEN1 (DISJ2_TAC \\ METIS_TAC [])
-  THEN1 (DISJ2_TAC \\ Q.EXISTS_TAC `k+k'+n` \\ fs [AC ADD_COMM ADD_ASSOC])
-  THEN1 (DISJ2_TAC \\ METIS_TAC []));
 
 val zBYTECODE_DIVERGED_def = Define `
   zBYTECODE_DIVERGED output (cs,cb) =
