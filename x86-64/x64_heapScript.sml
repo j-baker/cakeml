@@ -16908,6 +16908,12 @@ val TEMPORAL_IMP_T_OR_F_EVENTUALLY = store_thm("TEMPORAL_IMP_T_OR_F_EVENTUALLY",
   qexists_tac`0` >>
   simp[ETA_AX])
 
+val rel_sequence_shift = prove(
+  ``!n seq' s. rel_sequence n seq' s ==> !i. rel_sequence n (\j. seq' (i + j)) (seq' i)``,
+  REWRITE_TAC [rel_sequence_def] \\ REPEAT STRIP_TAC \\ SIMP_TAC std_ss []
+  \\ Cases_on `?s. n (seq' (i + n')) s` \\ ASM_REWRITE_TAC []
+  \\ FULL_SIMP_TAC std_ss [ADD1,ADD_ASSOC] \\ METIS_TAC []);
+
 val SPEC_N_1_IMP_SUC = store_thm("SPEC_N_1_IMP_SUC",
   ``∀n model pre1 pre2 post code err.
     SPEC_N n model pre2 code post err ∧ SPEC_1 model pre1 code pre2 err ⇒
@@ -16921,11 +16927,14 @@ val SPEC_N_1_IMP_SUC = store_thm("SPEC_N_1_IMP_SUC",
   reverse strip_tac >- (METIS_TAC[]) >>
   fs[NEXT_def,EVENTUALLY_def,N_NEXT_THM] >>
   qmatch_assum_abbrev_tac`NOW pre2 ff ss` >>
-  `∃state'. rel_sequence model1 ss state'` by (
-    last_x_assum kall_tac >>
-    UNABBREV_ALL_TAC >>
-    pop_assum kall_tac >>
-    cheat)
+  `?state'. rel_sequence model1 ss state'` by
+     (UNABBREV_ALL_TAC
+      \\ Q.EXISTS_TAC `seq' (k + 1)`
+      \\ IMP_RES_TAC rel_sequence_shift
+      \\ POP_ASSUM (MP_TAC o Q.SPEC `k+1`)
+      \\ MATCH_MP_TAC (METIS_PROVE [] ``(b1=b2)==>(b1==>b2)``)
+      \\ REPEAT (AP_TERM_TAC ORELSE AP_THM_TAC)
+      \\ fs [FUN_EQ_THM,AC ADD_COMM ADD_ASSOC]) >>
   first_x_assum(qspecl_then[`state'`,`ss`,`r`]mp_tac) >>
   simp[] >>
   strip_tac >- (
@@ -16993,12 +17002,6 @@ val N_NEXT_thm = prove(
   ``!k p f s. N_NEXT k p f s = p f (\n. s (n + k))``,
   Induct \\ fs [N_NEXT_def,NEXT_def,ADD1,AC ADD_COMM ADD_ASSOC]
   \\ CONV_TAC (DEPTH_CONV ETA_CONV) \\ fs []);
-
-val rel_sequence_shift = prove(
-  ``!n seq' s. rel_sequence n seq' s ==> !i. rel_sequence n (\j. seq' (i + j)) (seq' i)``,
-  REWRITE_TAC [rel_sequence_def] \\ REPEAT STRIP_TAC \\ SIMP_TAC std_ss []
-  \\ Cases_on `?s. n (seq' (i + n')) s` \\ ASM_REWRITE_TAC []
-  \\ FULL_SIMP_TAC std_ss [ADD1,ADD_ASSOC] \\ METIS_TAC []);
 
 val SPEC_N_COMPOSE = prove(
   ``SPEC_N m model p2 c p3 err ==>
