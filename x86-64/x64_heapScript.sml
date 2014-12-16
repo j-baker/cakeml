@@ -16881,6 +16881,16 @@ val zBC_HEAP_1 = prove(
          INSERT code_abbrevs cs)
         (zBC_HEAP s2 (x,cs,stack,s,out) (cb,sb,ev,f2) *
          zPC (cb + n2w (2 * s2.pc)) * ~zS) (zHEAP_ERROR cs)``,
+  (*
+  rpt strip_tac >>
+  imp_res_tac zBC_HEAP_THM >>
+  first_x_assum(qspecl_then[`x`,`s`,`out`]strip_assume_tac) >>
+  imp_res_tac SPEC_IMP_SPEC_1 >>
+  pop_assum mp_tac >> simp[] >>
+  disch_then match_mp_tac
+  f"SPEC_1"
+*)
+
   cheat) (* same as above but with SPEC_1 instead of SPEC *)
   |> SIMP_RULE std_ss [PULL_FORALL] |> SPEC_ALL
   |> SIMP_RULE std_ss [AND_IMP_INTRO,GSYM PULL_FORALL,GSYM CONJ_ASSOC]
@@ -16889,6 +16899,41 @@ val SPEC_N_def = Define `
   SPEC_N n model pre code post err <=>
      TEMPORAL model code
        (T_IMPLIES (NOW pre) (T_OR_F (N_NEXT n (EVENTUALLY (NOW post))) err))`
+
+val TEMPORAL_IMP_T_OR_F_EVENTUALLY = store_thm("TEMPORAL_IMP_T_OR_F_EVENTUALLY",
+  ``TEMPORAL model code (T_IMPLIES p1 (T_OR_F (EVENTUALLY p1) p2))``,
+  PairCases_on`model` >>
+  rw[TEMPORAL_def,T_IMPLIES_def,T_OR_F_def,EVENTUALLY_def] >>
+  disj1_tac >>
+  qexists_tac`0` >>
+  simp[ETA_AX])
+
+val SPEC_N_1_IMP_SUC = store_thm("SPEC_N_1_IMP_SUC",
+  ``∀n model pre1 pre2 post code err.
+    SPEC_N n model pre2 code post err ∧ SPEC_1 model pre1 code pre2 err ⇒
+    SPEC_N (SUC n) model pre1 code post err``,
+  rpt gen_tac >>
+  PairCases_on`model` >>
+  simp[SPEC_N_def,N_NEXT_def,SPEC_1_def,TEMPORAL_def,T_IMPLIES_def,T_OR_F_def,EVENTUALLY_def] >>
+  rw[] >>
+  first_x_assum(fn th => first_assum(mp_tac o MATCH_MP th)) >>
+  first_x_assum(fn th => disch_then(mp_tac o C MATCH_MP th)) >>
+  reverse strip_tac >- (METIS_TAC[]) >>
+  fs[NEXT_def,EVENTUALLY_def,N_NEXT_THM] >>
+  qmatch_assum_abbrev_tac`NOW pre2 ff ss` >>
+  `∃state'. rel_sequence model1 ss state'` by (
+    last_x_assum kall_tac >>
+    UNABBREV_ALL_TAC >>
+    pop_assum kall_tac >>
+    cheat)
+  first_x_assum(qspecl_then[`state'`,`ss`,`r`]mp_tac) >>
+  simp[] >>
+  strip_tac >- (
+    disj1_tac >>
+    fs[Abbr`ss`] >>
+    qexists_tac`k+k'` >> fsrw_tac[ARITH_ss][] ) >>
+  fs[Abbr`ss`] >> disj2_tac >>
+  qexists_tac`k+k'+1` >> fsrw_tac[ARITH_ss][] )
 
 val zBC_HEAP_N = prove(
   ``!n s1 s2.
@@ -16902,7 +16947,30 @@ val zBC_HEAP_N = prove(
         ((cb,x64_code 0 s1.code) INSERT code_abbrevs cs)
         (zBC_HEAP s2 (x,cs,stack,s,out) (cb,sb,ev,f2) *
          zPC (cb + n2w (2 * s2.pc)) * ~zS) (zHEAP_ERROR cs)``,
-  cheat) (* req some lemmas, but otherwise easy induction *)
+  Induct >- (
+    rw[NRC,SPEC_N_def,N_NEXT_def] >>
+    MATCH_ACCEPT_TAC TEMPORAL_IMP_T_OR_F_EVENTUALLY ) >>
+  rw[NRC] >>
+  qmatch_assum_rename_tac`bc_next s1 sb`[] >>
+  first_x_assum(qspecl_then[`sb`,`s2`]mp_tac) >>
+  MATCH_MP_TAC IMP_IMP >>
+  conj_tac >- rw[] >>
+  MATCH_MP_TAC IMP_IMP >>
+  conj_tac >- (
+    rw[] >>
+    imp_res_tac NRC_RTC >>
+    imp_res_tac RTC_bc_next_preserves >>
+    imp_res_tac bc_next_preserves_inst_length >>
+    PROVE_TAC[] ) >>
+  strip_tac >>
+  HO_MATCH_MP_TAC SPEC_N_1_IMP_SUC >>
+  qmatch_assum_abbrev_tac`SPEC_N n model pre code post err` >>
+  qexists_tac`pre` >>
+  conj_tac >- (
+    METIS_TAC[bc_next_preserves_code] ) >>
+  UNABBREV_ALL_TAC >>
+  MATCH_MP_TAC zBC_HEAP_1 >>
+  rw[])
 
 val T_OR_F_thm = prove(
   ``T_OR_F p post = T_DISJ p (EVENTUALLY (NOW post))``,
