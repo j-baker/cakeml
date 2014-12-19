@@ -17526,6 +17526,29 @@ val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
     |> MATCH_MP NRC_lemma
   in th end;
 
+val bc_executes_ok_def = Define `
+  bc_executes_ok s <=>
+    bc_diverges s \/ ?s1. bc_terminates s s1`;
+
+val T_DISJ_EVENTUALLY = prove(
+  ``T_DISJ (EVENTUALLY p) (EVENTUALLY q) =
+    EVENTUALLY (T_DISJ p q)``,
+  fs [T_DISJ_def,EVENTUALLY_def,FUN_EQ_THM] \\ METIS_TAC []);
+
+val SPEC_IMP_TEMPORAL = prove(
+  ``SPEC m p c (q \/ q1) ==>
+    TEMPORAL m c (T_IMPLIES (NOW p) (T_DISJ (EVENTUALLY (NOW q))
+      (EVENTUALLY (NOW q1))))``,
+  fs [T_DISJ_EVENTUALLY,SPEC_EQ_TEMPORAL]
+  \\ PairCases_on `m`
+  \\ fs [TEMPORAL_def,LET_DEF,T_IMPLIES_def,EVENTUALLY_def,
+         NOW_def,SEP_REFINE_def,T_DISJ_def,SEP_CLAUSES]
+  \\ fs [SEP_DISJ_def] \\ METIS_TAC []);
+
+val T_DISJ_COMM = prove(
+  ``T_DISJ p q = T_DISJ q p``,
+  fs [FUN_EQ_THM,T_DISJ_def, AC DISJ_COMM DISJ_ASSOC]);
+
 val combine_lemma = prove(
   ``(!s2.
        bc_terminates (standalone_bc_init_state init_pc bc_code) s2 ==>
@@ -17551,7 +17574,20 @@ val combine_lemma = prove(
                     cond (bc_terminates
                (standalone_bc_init_state init_pc bc_code) s2))))))))``,
   Cases_on `bc_diverges (standalone_bc_init_state init_pc bc_code)` \\ fs []
-  \\ cheat); (* in principle easy, but details might be ugly *)
+  \\ REPEAT STRIP_TAC THEN1
+   (ONCE_REWRITE_TAC [T_DISJ_COMM]
+    \\ ONCE_REWRITE_TAC [UNION_COMM]
+    \\ MATCH_MP_TAC (MP_CANON TEMPORAL_EXTEND_CODE) \\ fs [])
+  \\ REPEAT STRIP_TAC
+  \\ fs [bc_executes_ok_def] \\ fs []
+  \\ RES_TAC \\ fs [GSYM SPEC_EQ_TEMPORAL]
+  \\ MATCH_MP_TAC SPEC_IMP_TEMPORAL
+  \\ MATCH_MP_TAC (MP_CANON SPEC_ADD_CODE)
+  \\ IMP_RES_TAC SPEC_WEAKEN \\ POP_ASSUM MATCH_MP_TAC
+  \\ fs [SEP_IMP_def,SEP_CLAUSES,SEP_EXISTS_THM]
+  \\ REPEAT STRIP_TAC
+  \\ Q.EXISTS_TAC `s1` \\ fs [SEP_CLAUSES]
+  \\ fs [SEP_DISJ_def]);
 
 val init_pc_bound = prove(
   ``init_pc < 2**30 ==>
