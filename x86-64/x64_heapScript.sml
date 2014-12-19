@@ -16914,6 +16914,35 @@ val T_CONJ_def = Define `
 
 (* SPEC_1 theorem *)
 
+val SPEC_1_zBC_HEAP_THM = prove(
+  ``EVEN (w2n cb) /\ (cs.stack_trunk - n2w (8 * SUC (LENGTH stack)) = sb) ==>
+    !s1 s2.
+      bc_next s1 s2 ==> (s1.inst_length = x64_inst_length) /\
+      (!r. r IN FDOM f2 ==> if ev then ODD r else EVEN r) ==>
+      SPEC_1 X64_MODEL
+         (zBC_HEAP s1 (x,cs,stack,s,out) (cb,sb,ev,f2) *
+          zPC (cb + n2w (2 * s1.pc)) * ~zS)
+        ((cb + n2w (2 * s1.pc),x64 (2 * s1.pc) (THE (bc_fetch s1)))
+         INSERT code_abbrevs cs)
+        (zBC_HEAP s2 (x,cs,stack,s,out) (cb,sb,ev,f2) *
+         zPC (cb + n2w (2 * s2.pc)) * ~zS)
+        (zHEAP_ERROR cs)``,
+  cheat); (* exactly as zBC_HEAP_THM but with SPEC_1 instead of SPEC,
+             eventually zBC_HEAP_THM should prove this theorem *)
+
+val TEMPORAL_APPEND_CODE = prove(
+  ``TEMPORAL X64_MODEL ((w,xs ++ ys) INSERT s) t <=>
+    TEMPORAL X64_MODEL ((w,xs) INSERT (w + n2w (LENGTH xs),ys) INSERT s) t``,
+  fs [TEMPORAL_def,X64_MODEL_def,GSYM CODE_POOL_INSERT_INSERT]);
+
+val TEMPORAL_SUBSET_CODE = prove(
+  ``TEMPORAL m c p /\ c SUBSET c1 ==> TEMPORAL m c1 p``,
+  REPEAT STRIP_TAC
+  \\ `c1 = c UNION c1` by (fs [SUBSET_DEF,EXTENSION] \\ METIS_TAC [])
+  \\ POP_ASSUM (fn th => ONCE_REWRITE_TAC [th])
+  \\ MATCH_MP_TAC (MP_CANON TEMPORAL_EXTEND_CODE)
+  \\ fs []);
+
 val zBC_HEAP_1 = prove(
   ``EVEN (w2n cb) /\ (cs.stack_trunk - n2w (8 * SUC (LENGTH stack)) = sb) ==>
     !s1 s2.
@@ -16926,17 +16955,17 @@ val zBC_HEAP_1 = prove(
          INSERT code_abbrevs cs)
         (zBC_HEAP s2 (x,cs,stack,s,out) (cb,sb,ev,f2) *
          zPC (cb + n2w (2 * s2.pc)) * ~zS) (zHEAP_ERROR cs)``,
-  (*
-  rpt strip_tac >>
-  imp_res_tac zBC_HEAP_THM >>
-  first_x_assum(qspecl_then[`x`,`s`,`out`]strip_assume_tac) >>
-  imp_res_tac SPEC_IMP_SPEC_1 >>
-  pop_assum mp_tac >> simp[] >>
-  disch_then match_mp_tac
-  f"SPEC_1"
-*)
-
-  cheat) (* same as above but with SPEC_1 instead of SPEC *)
+  REPEAT STRIP_TAC
+  \\ (MP_CANON SPEC_1_zBC_HEAP_THM
+      |> SPEC_ALL |> RW [GSYM AND_IMP_INTRO]
+      |> UNDISCH_ALL |> ASSUME_TAC)
+  \\ `?i. bc_fetch s1 = SOME i` by fs [bc_next_cases]
+  \\ fs [bc_fetch_def] \\ rfs []
+  \\ IMP_RES_TAC x64_code_EQ_x64 \\ fs []
+  \\ fs [TEMPORAL_APPEND_CODE,SPEC_1_def]
+  \\ IMP_RES_TAC TEMPORAL_SUBSET_CODE
+  \\ POP_ASSUM MATCH_MP_TAC
+  \\ fs [SUBSET_DEF])
   |> SIMP_RULE std_ss [PULL_FORALL] |> SPEC_ALL
   |> SIMP_RULE std_ss [AND_IMP_INTRO,GSYM PULL_FORALL,GSYM CONJ_ASSOC]
 
