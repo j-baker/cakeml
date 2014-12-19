@@ -17598,6 +17598,17 @@ val init_pc_bound = prove(
   \\ fs [bitTheory.SIGN_EXTEND_def,bitTheory.BIT_def,bitTheory.BITS_THM,LET_DEF]
   \\ IMP_RES_TAC LESS_DIV_EQ_ZERO \\ fs [])
 
+fun standalone_expand_code th = let
+  val tm = th |> concl |> rator |> rand
+  val lemma =
+    (SIMP_CONV (srw_ss()) [fetch "-" "full_cs_def",
+       code_abbrevs_def,full_code_abbrevs_def]
+     THENC REWRITE_CONV [all_code_abbrevs,word_arith_lemma1,
+             INSERT_UNION_EQ,UNION_EMPTY]
+     THENC SIMP_CONV std_ss []) tm
+  val th = th |> RW1 [lemma]
+  in th end
+
 val zSTANDALONE_CORRECT = curry save_thm "zSTANDALONE_CORRECT" let
   val th1 =
     zSTANDALONE_TERMINATES
@@ -17609,7 +17620,8 @@ val zSTANDALONE_CORRECT = curry save_thm "zSTANDALONE_CORRECT" let
     |> DISCH ``SIGN_EXTEND 32 64 (w2n (imm32:word32)) = 2 * init_pc``
     |> Q.INST [`imm32`|->`n2w (2 * init_pc)`]
     |> (fn th => MATCH_MP th (UNDISCH init_pc_bound))
-    |> UNDISCH_ALL (* TODO: sort out code segment *)
+    |> UNDISCH_ALL
+    |> standalone_expand_code
     |> DISCH_ALL
   in th end;
 
