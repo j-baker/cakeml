@@ -12843,12 +12843,63 @@ val x64_length_EVEN = prove(
   \\ SRW_TAC [] [] \\ FULL_SIMP_TAC std_ss [LENGTH,EVEN,IMM32_def]
   \\ FULL_SIMP_TAC std_ss [EVEN_ADD,EVEN_MULT]);
 
-val x64_length_NOT_ZERO = prove(
-  ``!bc. ~is_Label bc ==> x64_length bc <> 0``,
+val x64_length_LESS = prove(
+  ``!bc. ~is_Label bc ==> 1 < x64_length bc``,
   Cases \\ TRY (Cases_on `b:bc_stack_op`) \\ TRY (Cases_on `l:loc`)
   \\ TRY (Cases_on `b:bool`)
   \\ SIMP_TAC std_ss [x64_length_def,x64_def,LENGTH,EVEN,LET_DEF]
   \\ EVAL_TAC \\ SRW_TAC [] [is_Label_def]);
+
+val x64_length_NOT_ZERO = prove(
+  ``!bc. ~is_Label bc ==> x64_length bc <> 0``,
+  REPEAT STRIP_TAC \\ IMP_RES_TAC x64_length_LESS \\ DECIDE_TAC);
+
+val LENGTH_x64_IGNORE = prove(
+  ``!i n. LENGTH (x64 n i) = LENGTH (x64 0 i)``,
+  Cases \\ TRY (Cases_on `b`)  \\ TRY (Cases_on `l`)
+  \\ EVAL_TAC \\ SIMP_TAC std_ss [] \\ SRW_TAC [] []
+  \\ FULL_SIMP_TAC std_ss [] \\ EVAL_TAC);
+
+val LENGTH_x64_DIV2_TIMES2 = prove(
+  ``!k. ~is_Label bc ==>
+        (2 * (LENGTH (x64 k bc) DIV 2) - 2 + 2 = LENGTH (x64 k bc))``,
+  fs [LENGTH_x64_IGNORE,GSYM x64_length_def]
+  \\ REPEAT STRIP_TAC \\ IMP_RES_TAC x64_length_LESS
+  \\ STRIP_ASSUME_TAC (MATCH_MP (Q.SPEC `2` DIVISION) (DECIDE ``0<2:num``)
+                 |> Q.SPEC `x64_length bc` |> GSYM)
+  \\ `x64_length bc MOD 2 = 0` by METIS_TAC [EVEN_MOD2,x64_length_EVEN]
+  \\ fs [AC MULT_COMM MULT_ASSOC] \\ DECIDE_TAC);
+
+val x64_code_EQ_x64 = prove(
+  ``!bc_code p n.
+      (bc_fetch_aux bc_code x64_inst_length (p - n) = SOME i) /\ n <= p ==>
+      ?ys1 ys2.
+        (x64_code (2 * n) bc_code = ys1 ++ x64 (2 * p) i ++ ys2) /\
+        (2 * (p - n) = LENGTH ys1)``,
+  Induct \\ fs [bc_fetch_aux_def]
+  \\ REPEAT STRIP_TAC \\ Cases_on `is_Label h` \\ fs []
+  THEN1 (Cases_on `h` \\ fs [is_Label_def,x64_def,x64_code_def,
+           EVAL ``x64_length (Label n')``])
+  \\ Cases_on `p <= n` \\ fs [] THEN1
+   (`p = n` by DECIDE_TAC \\ fs []
+    \\ SRW_TAC [] [] \\ Q.EXISTS_TAC `[]` \\ fs [x64_code_def])
+  \\ fs [GSYM SUB_PLUS] \\ RES_TAC \\ POP_ASSUM (K ALL_TAC)
+  \\ POP_ASSUM MP_TAC
+  \\ MATCH_MP_TAC IMP_IMP
+  \\ STRIP_TAC THEN1 DECIDE_TAC
+  \\ REPEAT STRIP_TAC \\ fs [NOT_LESS]
+  \\ Q.PAT_ASSUM `~is_Label h` ASSUME_TAC
+  \\ fs [x64_code_def,x64_length_def,x64_inst_length_def,LEFT_ADD_DISTRIB,
+         LENGTH_x64_DIV2_TIMES2,LEFT_SUB_DISTRIB]
+  \\ Q.LIST_EXISTS_TAC [`x64 (2 * n) h ++ ys1`,`ys2`]
+  \\ fs [] \\ POP_ASSUM MP_TAC
+  \\ fs [LENGTH_x64_IGNORE]
+  \\ POP_ASSUM (fn th => fs [GSYM th])
+  \\ IMP_RES_TAC (DECIDE ``n <= p ==> 2 * n <= 2 * p:num``)
+  \\ FULL_SIMP_TAC bool_ss [LEFT_ADD_DISTRIB,LEFT_SUB_DISTRIB]
+  \\ REPEAT STRIP_TAC \\ fs [LENGTH_x64_DIV2_TIMES2]
+  \\ DECIDE_TAC)
+  |> Q.SPECL [`bc_code`,`p`,`0`] |> SIMP_RULE std_ss [];
 
 val x64_code_def = zDefine `
   (x64_code i [] = []) /\
@@ -12861,12 +12912,6 @@ val x64_code_APPEND = prove(
       x64_code (p + SUM (MAP x64_length xs1)) xs2``,
   Induct \\ SIMP_TAC std_ss [APPEND,x64_code_def,MAP,SUM,WORD_ADD_0]
   \\ ASM_SIMP_TAC std_ss [APPEND_ASSOC,LEFT_ADD_DISTRIB,ADD_ASSOC]);
-
-val LENGTH_x64_IGNORE = prove(
-  ``!i n. LENGTH (x64 n i) = LENGTH (x64 0 i)``,
-  Cases \\ TRY (Cases_on `b`)  \\ TRY (Cases_on `l`)
-  \\ EVAL_TAC \\ SIMP_TAC std_ss [] \\ SRW_TAC [] []
-  \\ FULL_SIMP_TAC std_ss [] \\ EVAL_TAC);
 
 val LENGTH_x64_code = prove(
   ``!xs p. LENGTH (x64_code p xs) = SUM (MAP x64_length xs)``,
@@ -17353,20 +17398,25 @@ val SPEC_ADD_DISJ_BOTH = prove(
   \\ METIS_TAC [SPEC_REFL,SPEC_WEAKEN]);
 
 val NRC_bc_next_code = prove(
-  ``!n s1 s2. NRC bc_next n s1 s2 ==> (s1.code = s2.code)``,
+  ``!n s1 s2. NRC bc_next n s1 s2 ==> (s1.code = s2.code) /\
+                                      (s1.inst_length = s2.inst_length)``,
   Induct \\ fs [NRC,PULL_EXISTS] \\ REPEAT STRIP_TAC \\ RES_TAC
-  \\ IMP_RES_TAC bytecodeExtraTheory.bc_next_preserves_code \\ METIS_TAC []);
+  \\ IMP_RES_TAC bytecodeExtraTheory.bc_next_preserves_code
+  \\ IMP_RES_TAC bytecodeExtraTheory.bc_next_preserves_inst_length
+  \\ METIS_TAC []);
 
 val NRC_bc_next_standalone_bc_init_state = prove(
   ``NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2 ==>
-    (s2.code = bc_code)``,
+    (s2.code = bc_code) /\
+    (s2.inst_length = x64_inst_length)``,
   REPEAT STRIP_TAC \\ IMP_RES_TAC NRC_bc_next_code
   \\ fs [standalone_bc_init_state_def,init_bc_state_def]);
 
 val NRC_lemma = prove(
-  ``(((?b. bc_fetch s2 = SOME (Stop b)) /\
+  ``((((?b. bc_fetch s2 = SOME (Stop b)) /\
      ?n. NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2) /\
-     (s2.code = bc_code) ==> t) ==>
+     (s2.code = bc_code)) /\
+     (s2.inst_length = x64_inst_length) ==> t) ==>
     (bc_terminates (standalone_bc_init_state init_pc bc_code) s2 ==> t)``,
   Cases_on `t` \\ fs []
   \\ REPEAT STRIP_TAC
@@ -17393,8 +17443,11 @@ val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
     |> SIMP_RULE std_ss [AND_IMP_INTRO]
   val goal = concl th3 |> dest_imp |> fst
   val goal =
-    ``(bc_fetch s2 = SOME (Stop b)) /\ (s2.code = bc_code) ==> ^goal``
-  val lemma = prove(goal,cheat) (* simple-ish *)
+    ``(bc_fetch s2 = SOME (Stop b)) /\ (s2.code = bc_code) /\
+      (s2.inst_length = x64_inst_length) ==> ^goal``
+  val lemma = prove(goal,
+    fs [bc_fetch_def] \\ REPEAT STRIP_TAC
+    \\ MATCH_MP_TAC x64_code_EQ_x64 \\ fs [])
   val th4 = MP th3 (lemma |> UNDISCH)
   val set_lemma = prove(
     ``x INSERT (s UNION (x INSERT s)) = x INSERT s``,
@@ -17465,6 +17518,7 @@ val zSTANDALONE_TERMINATES = curry save_thm "zSTANDALONE_TERMINATES" let
   val comp = ISPEC ``X64_MODEL`` SPEC_COMPOSE
   val th = MATCH_MP comp (CONJ (thB |> f) (th2 |> f))
   val th = th
+    |> DISCH ``(s2:bc_state).inst_length = x64_inst_length``
     |> DISCH ``(s2:bc_state).code = bc_code``
     |> DISCH ``NRC bc_next n (standalone_bc_init_state init_pc bc_code) s2``
     |> DISCH ``bc_fetch s2 = SOME (Stop b)``
