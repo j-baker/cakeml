@@ -17339,7 +17339,12 @@ val SPEC_EXTEND_CODE = prove(
     !zs.
       (?ys1 ys2. (zs = (ys1 ++ xs ++ ys2)) /\ (n = LENGTH ys1)) ==>
       SPEC X64_MODEL p ((a,zs) INSERT code) q``,
-  cheat); (* fiddly but easy *)
+  SRW_TAC [] []
+  \\ MATCH_MP_TAC (MP_CANON SPEC_X64_MERGE_CODE |> GEN_ALL) \\ fs []
+  \\ MATCH_MP_TAC (MP_CANON SPEC_X64_MERGE_CODE |> GEN_ALL) \\ fs []
+  \\ IMP_RES_TAC (MP_CANON SPEC_SUBSET_CODE)
+  \\ POP_ASSUM MATCH_MP_TAC
+  \\ fs [SUBSET_DEF]);
 
 val SPEC_ADD_DISJ_BOTH = prove(
   ``SPEC m p c q ==> !r. SPEC m (p \/ r) c (q \/ r)``,
