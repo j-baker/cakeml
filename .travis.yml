@@ -1,5 +1,9 @@
 language: c
 sudo: false
 install: developers/cached-deps.sh
-script: developers/build-travis.sh
+script: split -l 10 developers/build-sequence developers/build-sequence.
+script: developers/build-travis.sh aa
+script: developers/build-travis.sh ab
+script: developers/build-travis.sh ac
+script: developers/build-travis.sh ad
 env: PATH=$PATH:$HOME/HOL/bin LD_LIBRARY_PATH=$HOME/polyml/lib
